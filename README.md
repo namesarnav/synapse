@@ -4,10 +4,6 @@
 
 - 🌱 I’m currently learning **Rust, CUDA Programming and Kernel Programming**
 
-- 👨‍💻 All of my projects are available at [https://namesarnav.vercel.app](https://namesarnav.vercel.app)
-
-- 📝 I regularly write articles on [https://medium.com/@namesarnav](https://medium.com/@namesarnav)
-
 - 📫 How to reach me **arnavv2003@gmail.com**
 
 - 📄 My resume is available at [https://github.com/namesarnav/resume-2025/blob/main/Arnav_Verma_Google_SE.pdf](https://github.com/namesarnav/resume-2025/blob/main/Arnav_Verma_Google_SE.pdf)
