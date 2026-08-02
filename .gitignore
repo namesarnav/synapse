@@ -1,0 +1,10 @@
+/bin/
+*.test
+*.out
+coverage.*
+.env
+node_modules/
+apps/web/dist/
+apps/web/coverage/
+.DS_Store
+tests/load/results/*.tmp
