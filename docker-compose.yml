@@ -16,7 +16,7 @@ services:
     image: redis:7-alpine
     healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 3s, timeout: 3s, retries: 20 }
   api:
-    build: { context: ., dockerfile: deployments/docker/Dockerfile.go, args: { APP: api } }
+    build: { context: ., dockerfile: deployments/docker/Dockerfile.service, args: { APP: api } }
     environment:
       <<: *go-env
       SYNAPSE_RUN_SCHEDULER: "false"
@@ -24,11 +24,11 @@ services:
     ports: ["8080:8080"]
     depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
   scheduler:
-    build: { context: ., dockerfile: deployments/docker/Dockerfile.go, args: { APP: scheduler } }
+    build: { context: ., dockerfile: deployments/docker/Dockerfile.service, args: { APP: scheduler } }
     environment: *go-env
     depends_on: [api]
   worker:
-    build: { context: ., dockerfile: deployments/docker/Dockerfile.go, args: { APP: worker } }
+    build: { context: ., dockerfile: deployments/docker/Dockerfile.service, args: { APP: worker } }
     environment: *go-env
     deploy: { replicas: 3 }
     depends_on: [api]

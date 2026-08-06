@@ -7,8 +7,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/namesarnav/synapse/internal/auth"
 	"github.com/namesarnav/synapse/internal/config"
 	"github.com/namesarnav/synapse/internal/persistence"
+	"github.com/namesarnav/synapse/internal/ratelimit"
+	"github.com/namesarnav/synapse/internal/workflow"
+	"github.com/namesarnav/synapse/internal/workflow/wfstore"
 )
 
 // Deps are the collaborators the API needs.
@@ -18,15 +22,32 @@ type Deps struct {
 	DB  *persistence.DB
 	// Extra readiness probes, e.g. redis.
 	Ready map[string]func(context.Context) error
+	// Checker validates expressions inside workflow graphs (nil skips it).
+	Checker workflow.ExprChecker
+	// OnPublish runs after a new workflow version is published.
+	OnPublish func(ctx context.Context, workspaceID, workflowID string, v wfstore.Version)
 }
 
 type Server struct {
 	Deps
-	mux *http.ServeMux
+	Auth        *auth.Store
+	Workflows   *wfstore.Store
+	authLimiter *ratelimit.Limiter
+	mux         *http.ServeMux
 }
 
 func New(d Deps) *Server {
-	s := &Server{Deps: d, mux: http.NewServeMux()}
+	rate := float64(d.Cfg.AuthRatePerMin) / 60
+	if d.Cfg.AuthRatePerMin <= 0 {
+		rate, d.Cfg.AuthRatePerMin = 20.0/60, 20
+	}
+	s := &Server{
+		Deps:        d,
+		Auth:        &auth.Store{DB: d.DB},
+		Workflows:   &wfstore.Store{DB: d.DB},
+		authLimiter: ratelimit.New(rate, d.Cfg.AuthRatePerMin),
+		mux:         http.NewServeMux(),
+	}
 	s.routes()
 	return s
 }
@@ -34,6 +55,28 @@ func New(d Deps) *Server {
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /health/live", s.handleLive)
 	s.mux.HandleFunc("GET /health/ready", s.handleReady)
+
+	const v1 = "/api/v1"
+	s.mux.HandleFunc("POST "+v1+"/auth/register", s.handleRegister)
+	s.mux.HandleFunc("POST "+v1+"/auth/login", s.handleLogin)
+	s.mux.HandleFunc("POST "+v1+"/auth/logout", s.requireAuth(s.handleLogout))
+	s.mux.HandleFunc("POST "+v1+"/auth/refresh", s.requireAuth(s.handleRefresh))
+	s.mux.HandleFunc("GET "+v1+"/auth/me", s.requireAuth(s.handleMe))
+	s.mux.HandleFunc("POST "+v1+"/workspaces", s.requireAuth(s.handleCreateWorkspace))
+	s.mux.HandleFunc("GET "+v1+"/node-types", s.requireAuth(s.handleNodeTypes))
+
+	ws := v1 + "/workspaces/{ws}"
+	s.mux.HandleFunc("POST "+ws+"/members", s.requireWorkspace(auth.RoleAdmin, s.handleAddMember))
+	s.mux.HandleFunc("GET "+ws+"/workflows", s.requireWorkspace(auth.RoleViewer, s.handleListWorkflows))
+	s.mux.HandleFunc("POST "+ws+"/workflows", s.requireWorkspace(auth.RoleMember, s.handleCreateWorkflow))
+	s.mux.HandleFunc("GET "+ws+"/workflows/{id}", s.requireWorkspace(auth.RoleViewer, s.handleGetWorkflow))
+	s.mux.HandleFunc("PUT "+ws+"/workflows/{id}", s.requireWorkspace(auth.RoleMember, s.handleUpdateWorkflow))
+	s.mux.HandleFunc("DELETE "+ws+"/workflows/{id}", s.requireWorkspace(auth.RoleMember, s.handleDeleteWorkflow))
+	s.mux.HandleFunc("POST "+ws+"/workflows/{id}/validate", s.requireWorkspace(auth.RoleViewer, s.handleValidateWorkflow))
+	s.mux.HandleFunc("POST "+ws+"/workflows/{id}/publish", s.requireWorkspace(auth.RoleMember, s.handlePublishWorkflow))
+	s.mux.HandleFunc("POST "+ws+"/workflows/{id}/unpublish", s.requireWorkspace(auth.RoleMember, s.handleUnpublishWorkflow))
+	s.mux.HandleFunc("GET "+ws+"/workflows/{id}/versions", s.requireWorkspace(auth.RoleViewer, s.handleListVersions))
+	s.mux.HandleFunc("GET "+ws+"/workflows/{id}/versions/{version}", s.requireWorkspace(auth.RoleViewer, s.handleGetVersion))
 }
 
 func (s *Server) Handler() http.Handler {
