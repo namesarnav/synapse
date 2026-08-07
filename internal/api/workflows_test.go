@@ -261,3 +261,57 @@ func TestNodeTypesEndpoint(t *testing.T) {
 		t.Fatalf("anon got %d", r.Status)
 	}
 }
+
+func TestValidateChecksExpressions(t *testing.T) {
+	h := newHarness(t)
+	a := h.register("expr@example.com")
+	g := func(expr string) map[string]any {
+		return map[string]any{
+			"nodes": []map[string]any{
+				{"id": "t", "type": "manual_trigger"},
+				{"id": "c", "type": "condition", "config": map[string]any{"expression": expr}},
+				{"id": "l", "type": "log", "config": map[string]any{"message": "n={{ nodes.ghost.x }}"}},
+			},
+			"edges": []map[string]any{
+				{"id": "e1", "source": "t", "target": "c"},
+				{"id": "e2", "source": "c", "target": "l", "branch": "true"},
+			},
+		}
+	}
+	var wf wfstore.Workflow
+	h.do("POST", a.wf(""), a.Token, map[string]any{"name": "x", "graph": simpleGraph}).JSON(t, &wf)
+	check := func(expr string) []string {
+		var vr struct {
+			Valid  bool
+			Issues []struct{ Code string }
+		}
+		h.do("POST", a.wf("/"+wf.ID+"/validate"), a.Token, map[string]any{"graph": g(expr)}).JSON(t, &vr)
+		var codes []string
+		for _, i := range vr.Issues {
+			codes = append(codes, i.Code)
+		}
+		return codes
+	}
+	if codes := check("trigger.x > 1 &&"); !contains(codes, "invalid_config") {
+		t.Errorf("syntax error not reported: %v", codes)
+	}
+	codes := check("trigger.x > 1")
+	if !contains(codes, "unknown_reference") {
+		t.Errorf("unknown node reference not reported: %v", codes)
+	}
+	if contains(codes, "invalid_config") {
+		t.Errorf("valid expression rejected: %v", codes)
+	}
+	if codes := check("nodes.t.x"); !contains(codes, "unknown_reference") {
+		t.Errorf("template reference still expected: %v", codes)
+	}
+}
+
+func contains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}

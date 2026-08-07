@@ -12,6 +12,7 @@ import (
 
 	"github.com/namesarnav/synapse/internal/api"
 	"github.com/namesarnav/synapse/internal/config"
+	"github.com/namesarnav/synapse/internal/expressions"
 	"github.com/namesarnav/synapse/internal/logging"
 	"github.com/namesarnav/synapse/internal/persistence"
 	"github.com/namesarnav/synapse/migrations"
@@ -44,7 +45,7 @@ func run() error {
 	}
 	log.Info("migrations applied", "count", len(ran))
 
-	srv := api.New(api.Deps{Cfg: cfg, Log: log, DB: db})
+	srv := api.New(api.Deps{Cfg: cfg, Log: log, DB: db, Checker: expressions.Checker{}})
 	hs := &http.Server{Addr: cfg.HTTPAddr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- hs.ListenAndServe() }()

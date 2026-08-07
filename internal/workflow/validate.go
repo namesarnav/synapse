@@ -15,7 +15,7 @@ const (
 	MaxEdges = 2000
 )
 
-var nodeIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+var nodeIDRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
 
 // Issue is one validation finding, addressable to a node or edge so the
 // editor can highlight it.
@@ -95,7 +95,7 @@ func Validate(g *Graph, ck ExprChecker) *Report {
 		n := &g.Nodes[i]
 		switch {
 		case !nodeIDRe.MatchString(n.ID) || n.ID == ItemInputID:
-			r.errf("invalid_node_id", n.ID, "", "node id %q must match [A-Za-z0-9][A-Za-z0-9_-]{0,63}", n.ID)
+			r.errf("invalid_node_id", n.ID, "", "node id %q must match [A-Za-z][A-Za-z0-9_]{0,63}", n.ID)
 			continue
 		case seen[n.ID]:
 			r.errf("duplicate_node_id", n.ID, "", "duplicate node id %q", n.ID)
