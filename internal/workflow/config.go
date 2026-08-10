@@ -83,6 +83,9 @@ type HTTPConfig struct {
 	Body            any               `json:"body,omitempty"`
 	FollowRedirects bool              `json:"follow_redirects,omitempty"`
 	ExpectStatus    []int             `json:"expect_status,omitempty"` // default: any 2xx
+	// IdempotencyHeader, when set, sends the task's stable idempotency key in
+	// that header so receivers can deduplicate redelivered requests.
+	IdempotencyHeader string `json:"idempotency_header,omitempty"`
 }
 
 type LogConfig struct {
@@ -274,6 +277,9 @@ func checkConfig(n *Node, ck ExprChecker) (problems []string, refs []string) {
 			tmpl("query."+k, v)
 		}
 		walk("body", c.Body)
+		if h := c.IdempotencyHeader; h != "" && !validHeaderName(h) {
+			problems = append(problems, "idempotency_header is not a valid header name")
+		}
 		for _, s := range c.ExpectStatus {
 			if s < 100 || s > 599 {
 				problems = append(problems, "expect_status contains an invalid status code")
@@ -319,4 +325,64 @@ func walkStrings(path string, v any, fn func(field, s string)) {
 			walkStrings(path+"."+k, e, fn)
 		}
 	}
+}
+
+// Sources returns the expression and template strings a node's config contains.
+func Sources(n *Node) (exprs, tmpls []string) {
+	cfg, err := DecodeConfig(n)
+	if err != nil {
+		return nil, nil
+	}
+	tm := func(v any) { walkStrings("", v, func(_, s string) { tmpls = append(tmpls, s) }) }
+	switch c := cfg.(type) {
+	case *ConditionConfig:
+		exprs = append(exprs, c.Expression)
+	case *DelayConfig:
+		if c.Until != "" {
+			exprs = append(exprs, c.Until)
+		}
+	case *ForEachConfig:
+		exprs = append(exprs, c.Items)
+	case *TransformConfig:
+		if c.Expression != "" {
+			exprs = append(exprs, c.Expression)
+		}
+		tm(c.Output)
+	case *StopConfig:
+		tm(c.Message)
+	case *HTTPConfig:
+		tm(c.URL)
+		for _, v := range c.Headers {
+			tm(v)
+		}
+		for _, v := range c.Query {
+			tm(v)
+		}
+		tm(c.Body)
+	case *LogConfig:
+		tm(c.Message)
+		tm(c.Fields)
+	case *EmailConfig:
+		tm(c.To)
+		tm(c.From)
+		tm(c.Subject)
+		tm(c.Body)
+	case *SubWorkflowConfig:
+		tm(c.Input)
+	case *ScheduleConfig:
+		tm(c.Payload)
+	}
+	return exprs, tmpls
+}
+
+func validHeaderName(h string) bool {
+	if h == "" || len(h) > 100 {
+		return false
+	}
+	for _, r := range h {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
 }
