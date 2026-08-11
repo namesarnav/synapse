@@ -134,3 +134,9 @@ func NotFound(err error) error {
 	}
 	return err
 }
+
+// IsInvalidText reports a malformed value for a typed column (e.g. a bad uuid).
+func IsInvalidText(err error) bool {
+	var pe *pgconn.PgError
+	return errors.As(err, &pe) && pe.Code == "22P02"
+}
