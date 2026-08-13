@@ -57,6 +57,11 @@ func (r resp) errCode() string {
 // do performs a bearer-authenticated request (token may be empty).
 func (h *harness) do(method, path, token string, body any) resp {
 	h.t.Helper()
+	return h.doHeaders(method, path, token, body, nil)
+}
+
+func (h *harness) doHeaders(method, path, token string, body any, headers map[string]string) resp {
+	h.t.Helper()
 	var rd io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -68,6 +73,9 @@ func (h *harness) do(method, path, token string, body any) resp {
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {

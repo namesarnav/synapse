@@ -11,6 +11,7 @@ import (
 	"github.com/namesarnav/synapse/internal/config"
 	"github.com/namesarnav/synapse/internal/persistence"
 	"github.com/namesarnav/synapse/internal/ratelimit"
+	"github.com/namesarnav/synapse/internal/runtime"
 	"github.com/namesarnav/synapse/internal/workflow"
 	"github.com/namesarnav/synapse/internal/workflow/wfstore"
 )
@@ -24,6 +25,8 @@ type Deps struct {
 	Ready map[string]func(context.Context) error
 	// Checker validates expressions inside workflow graphs (nil skips it).
 	Checker workflow.ExprChecker
+	// Runtime executes workflows; a default one is created when nil.
+	Runtime *runtime.Runtime
 	// OnPublish runs after a new workflow version is published.
 	OnPublish func(ctx context.Context, workspaceID, workflowID string, v wfstore.Version)
 }
@@ -40,6 +43,10 @@ func New(d Deps) *Server {
 	rate := float64(d.Cfg.AuthRatePerMin) / 60
 	if d.Cfg.AuthRatePerMin <= 0 {
 		rate, d.Cfg.AuthRatePerMin = 20.0/60, 20
+	}
+	if d.Runtime == nil {
+		d.Runtime = runtime.New(&runtime.Runtime{DB: d.DB, Log: d.Log, MaxQueueDepth: d.Cfg.MaxQueueDepth,
+			MaxDepth: d.Cfg.MaxSubWorkflowDepth, LeaseDuration: d.Cfg.LeaseDuration, MaxDeliveries: d.Cfg.MaxDeliveries})
 	}
 	s := &Server{
 		Deps:        d,
@@ -77,6 +84,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST "+ws+"/workflows/{id}/unpublish", s.requireWorkspace(auth.RoleMember, s.handleUnpublishWorkflow))
 	s.mux.HandleFunc("GET "+ws+"/workflows/{id}/versions", s.requireWorkspace(auth.RoleViewer, s.handleListVersions))
 	s.mux.HandleFunc("GET "+ws+"/workflows/{id}/versions/{version}", s.requireWorkspace(auth.RoleViewer, s.handleGetVersion))
+	s.mux.HandleFunc("POST "+ws+"/workflows/{id}/run", s.requireWorkspace(auth.RoleMember, s.handleRunWorkflow))
+	s.mux.HandleFunc("GET "+ws+"/executions", s.requireWorkspace(auth.RoleViewer, s.handleListExecutions))
+	s.mux.HandleFunc("GET "+ws+"/executions/{id}", s.requireWorkspace(auth.RoleViewer, s.handleGetExecution))
+	s.mux.HandleFunc("GET "+ws+"/executions/{id}/events", s.requireWorkspace(auth.RoleViewer, s.handleExecutionEvents))
+	s.mux.HandleFunc("POST "+ws+"/executions/{id}/cancel", s.requireWorkspace(auth.RoleMember, s.handleCancelExecution))
 }
 
 func (s *Server) Handler() http.Handler {
