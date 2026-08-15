@@ -251,6 +251,11 @@ func (s *Server) handlePublishWorkflow(w http.ResponseWriter, r *http.Request) {
 		s.wfErr(w, r, err)
 		return
 	}
+	if err := s.Triggers.Sync(r.Context(), ws, id); err != nil {
+		s.Log.Error("trigger sync failed", "workflow", id, "err", err)
+		writeError(w, r, s.Log, err)
+		return
+	}
 	if created && s.OnPublish != nil {
 		s.OnPublish(r.Context(), ws, id, v)
 	}
@@ -269,6 +274,10 @@ func (s *Server) handleUnpublishWorkflow(w http.ResponseWriter, r *http.Request)
 	}
 	if err := s.Workflows.Unpublish(r.Context(), ws, id); err != nil {
 		s.wfErr(w, r, err)
+		return
+	}
+	if err := s.Triggers.Sync(r.Context(), ws, id); err != nil {
+		writeError(w, r, s.Log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

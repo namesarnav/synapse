@@ -27,11 +27,15 @@ func run() error {
 	if cfg.WorkerID == "" {
 		cfg.WorkerID = fmt.Sprintf("%s-%d", host, os.Getpid())
 	}
-	rt := p.NewRuntime(nil)
+	sec, err := p.NewSecrets()
+	if err != nil {
+		return err
+	}
+	rt := p.NewRuntime(sec)
 	reg := nodes.NewRegistry(nodes.Options{HTTP: nodes.HTTPOptions{AllowPrivate: cfg.HTTPAllowPrivate}})
 	w := worker.New(rt, reg, worker.Config{
 		ID: cfg.WorkerID, Host: host, Concurrency: cfg.WorkerCapacity, PollInterval: cfg.PollInterval,
-		HeartbeatInterval: cfg.HeartbeatInterval, ShutdownGrace: cfg.ShutdownTimeout, TypeLimits: cfg.NodeTypeLimits,
+		HeartbeatInterval: cfg.HeartbeatInterval, ShutdownGrace: cfg.ShutdownTimeout, TypeLimits: cfg.NodeTypeLimits, Redact: sec.RedactFor,
 	}, p.Log)
 	app.ServeOps(p.Ctx, cfg.WorkerMetricsAddr, p.Log, p.DB)
 	return w.Run(p.Ctx)

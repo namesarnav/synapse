@@ -12,6 +12,8 @@ import (
 	"github.com/namesarnav/synapse/internal/persistence"
 	"github.com/namesarnav/synapse/internal/ratelimit"
 	"github.com/namesarnav/synapse/internal/runtime"
+	"github.com/namesarnav/synapse/internal/secrets"
+	"github.com/namesarnav/synapse/internal/triggers"
 	"github.com/namesarnav/synapse/internal/workflow"
 	"github.com/namesarnav/synapse/internal/workflow/wfstore"
 )
@@ -27,6 +29,8 @@ type Deps struct {
 	Checker workflow.ExprChecker
 	// Runtime executes workflows; a default one is created when nil.
 	Runtime *runtime.Runtime
+	// Secrets stores workspace secrets; built from Cfg.MasterKey when nil.
+	Secrets *secrets.Store
 	// OnPublish runs after a new workflow version is published.
 	OnPublish func(ctx context.Context, workspaceID, workflowID string, v wfstore.Version)
 }
@@ -35,7 +39,9 @@ type Server struct {
 	Deps
 	Auth        *auth.Store
 	Workflows   *wfstore.Store
+	Triggers    *triggers.Store
 	authLimiter *ratelimit.Limiter
+	hookLimiter *ratelimit.Limiter
 	mux         *http.ServeMux
 }
 
@@ -44,15 +50,34 @@ func New(d Deps) *Server {
 	if d.Cfg.AuthRatePerMin <= 0 {
 		rate, d.Cfg.AuthRatePerMin = 20.0/60, 20
 	}
+	if d.Secrets == nil {
+		st, err := secrets.New(d.DB, d.Cfg.MasterKey)
+		if err != nil {
+			panic("api: " + err.Error())
+		}
+		d.Secrets = st
+	}
 	if d.Runtime == nil {
 		d.Runtime = runtime.New(&runtime.Runtime{DB: d.DB, Log: d.Log, MaxQueueDepth: d.Cfg.MaxQueueDepth,
-			MaxDepth: d.Cfg.MaxSubWorkflowDepth, LeaseDuration: d.Cfg.LeaseDuration, MaxDeliveries: d.Cfg.MaxDeliveries})
+			MaxDepth: d.Cfg.MaxSubWorkflowDepth, LeaseDuration: d.Cfg.LeaseDuration, MaxDeliveries: d.Cfg.MaxDeliveries, Secrets: d.Secrets})
+	}
+	hookRate, hookBurst := d.Cfg.WebhookRatePerSec, d.Cfg.WebhookRateBurst
+	if hookRate <= 0 {
+		hookRate = 50
+	}
+	if hookBurst <= 0 {
+		hookBurst = 100
+	}
+	if d.Cfg.WebhookMaxBodyBytes <= 0 {
+		d.Cfg.WebhookMaxBodyBytes = 1 << 20
 	}
 	s := &Server{
 		Deps:        d,
 		Auth:        &auth.Store{DB: d.DB},
 		Workflows:   &wfstore.Store{DB: d.DB},
 		authLimiter: ratelimit.New(rate, d.Cfg.AuthRatePerMin),
+		hookLimiter: ratelimit.New(hookRate, hookBurst),
+		Triggers:    &triggers.Store{DB: d.DB, RT: d.Runtime, Log: d.Log},
 		mux:         http.NewServeMux(),
 	}
 	s.routes()
@@ -62,6 +87,8 @@ func New(d Deps) *Server {
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /health/live", s.handleLive)
 	s.mux.HandleFunc("GET /health/ready", s.handleReady)
+
+	s.mux.HandleFunc("POST /hooks/{endpoint_id}", s.handleWebhook)
 
 	const v1 = "/api/v1"
 	s.mux.HandleFunc("POST "+v1+"/auth/register", s.handleRegister)
@@ -85,6 +112,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET "+ws+"/workflows/{id}/versions", s.requireWorkspace(auth.RoleViewer, s.handleListVersions))
 	s.mux.HandleFunc("GET "+ws+"/workflows/{id}/versions/{version}", s.requireWorkspace(auth.RoleViewer, s.handleGetVersion))
 	s.mux.HandleFunc("POST "+ws+"/workflows/{id}/run", s.requireWorkspace(auth.RoleMember, s.handleRunWorkflow))
+	s.mux.HandleFunc("GET "+ws+"/workflows/{id}/webhooks", s.requireWorkspace(auth.RoleViewer, s.handleListWebhooks))
+	s.mux.HandleFunc("GET "+ws+"/secrets", s.requireWorkspace(auth.RoleMember, s.handleListSecrets))
+	s.mux.HandleFunc("PUT "+ws+"/secrets/{name}", s.requireWorkspace(auth.RoleAdmin, s.handlePutSecret))
+	s.mux.HandleFunc("DELETE "+ws+"/secrets/{name}", s.requireWorkspace(auth.RoleAdmin, s.handleDeleteSecret))
 	s.mux.HandleFunc("GET "+ws+"/executions", s.requireWorkspace(auth.RoleViewer, s.handleListExecutions))
 	s.mux.HandleFunc("GET "+ws+"/executions/{id}", s.requireWorkspace(auth.RoleViewer, s.handleGetExecution))
 	s.mux.HandleFunc("GET "+ws+"/executions/{id}/events", s.requireWorkspace(auth.RoleViewer, s.handleExecutionEvents))

@@ -161,6 +161,13 @@ func (w *Worker) claimLoop(ctx, runCtx context.Context) {
 				w.Metrics.Claimed(len(tasks))
 			}
 			for _, t := range tasks {
+				// A batch can overshoot a per-type limit; hand the extras back uncounted.
+				if !w.admit(t.NodeType) {
+					if err := w.RT.Release(context.WithoutCancel(ctx), runtime.TaskRef{ID: t.ID, LeaseToken: t.LeaseToken}); err != nil {
+						w.Log.Warn("release over-limit task", "task", t.ID, "err", err)
+					}
+					continue
+				}
 				w.start(runCtx, t)
 			}
 		}
@@ -185,6 +192,14 @@ func (w *Worker) capacity() (int, []string) {
 		}
 	}
 	return w.Cfg.Concurrency - len(w.inflight), exclude
+}
+
+// admit reports whether another task of this type fits under its limit.
+func (w *Worker) admit(nodeType string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	lim := w.Cfg.TypeLimits[nodeType]
+	return lim <= 0 || w.byType[nodeType] < lim
 }
 
 func (w *Worker) start(runCtx context.Context, t runtime.Task) {

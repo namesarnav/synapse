@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/namesarnav/synapse/internal/config"
+	"github.com/namesarnav/synapse/internal/cron"
 	"github.com/namesarnav/synapse/internal/expressions"
 	"github.com/namesarnav/synapse/internal/logging"
 	"github.com/namesarnav/synapse/internal/persistence"
@@ -26,8 +27,8 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	db := testutil.NewDB(t)
-	cfg := config.Config{AuthRatePerMin: 100000}
-	srv := New(Deps{Cfg: cfg, Log: logging.New("test", "error", io.Discard, nil), DB: db, Checker: expressions.Checker{}})
+	cfg := config.Config{AuthRatePerMin: 100000, MasterKey: []byte("0123456789abcdef0123456789abcdef"), WebhookMaxBodyBytes: 1024, WebhookRatePerSec: 1000, WebhookRateBurst: 1000}
+	srv := New(Deps{Cfg: cfg, Log: logging.New("test", "error", io.Discard, nil), DB: db, Checker: expressions.Checker{Cron: cron.Validate}})
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return &harness{t: t, DB: db, Srv: srv, TS: ts}

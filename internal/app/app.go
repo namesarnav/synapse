@@ -18,6 +18,9 @@ import (
 	"github.com/namesarnav/synapse/internal/logging"
 	"github.com/namesarnav/synapse/internal/persistence"
 	"github.com/namesarnav/synapse/internal/runtime"
+	"github.com/namesarnav/synapse/internal/scheduler"
+	"github.com/namesarnav/synapse/internal/secrets"
+	"github.com/namesarnav/synapse/internal/triggers"
 	"github.com/namesarnav/synapse/migrations"
 )
 
@@ -73,6 +76,26 @@ func Boot(service string, maxConns int32) (*Process, error) {
 func (p *Process) Close() {
 	p.stop()
 	p.DB.Close()
+}
+
+// NewSecrets builds the encrypted secret store from the master key.
+func (p *Process) NewSecrets() (*secrets.Store, error) {
+	return secrets.New(p.DB, p.Cfg.MasterKey)
+}
+
+// NewScheduler builds a scheduler that also fires cron schedules.
+func (p *Process) NewScheduler(rt *runtime.Runtime) *scheduler.Scheduler {
+	c := p.Cfg
+	tr := &triggers.Store{DB: p.DB, RT: rt, Log: p.Log}
+	return scheduler.New(rt, scheduler.Config{
+		WakeInterval: c.SchedulerTick, ReapInterval: c.SchedulerTick, SweepInterval: 2 * c.SchedulerTick,
+		WorkerDeadAfter: c.WorkerDeadAfter, SweepAfter: c.SweepAfter,
+		ExtraTick: func(ctx context.Context) {
+			if _, err := tr.FireDue(ctx, 100); err != nil && ctx.Err() == nil {
+				p.Log.Error("fire schedules", "err", err)
+			}
+		},
+	}, p.Log)
 }
 
 // NewRuntime builds the durable runtime from configuration.

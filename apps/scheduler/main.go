@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/namesarnav/synapse/internal/app"
-	"github.com/namesarnav/synapse/internal/scheduler"
 )
 
 func main() {
@@ -21,11 +20,11 @@ func run() error {
 		return err
 	}
 	defer p.Close()
-	rt := p.NewRuntime(nil)
-	s := scheduler.New(rt, scheduler.Config{
-		WakeInterval: p.Cfg.SchedulerTick, ReapInterval: p.Cfg.SchedulerTick, SweepInterval: 2 * p.Cfg.SchedulerTick,
-		WorkerDeadAfter: p.Cfg.WorkerDeadAfter, SweepAfter: p.Cfg.SweepAfter,
-	}, p.Log)
+	sec, err := p.NewSecrets()
+	if err != nil {
+		return err
+	}
+	s := p.NewScheduler(p.NewRuntime(sec))
 	app.ServeOps(p.Ctx, p.Cfg.WorkerMetricsAddr, p.Log, p.DB)
 	s.Run(p.Ctx)
 	return nil
