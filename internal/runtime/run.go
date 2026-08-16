@@ -376,6 +376,9 @@ func (r *run) flushEvents() error {
 	if err := br.Close(); err != nil {
 		return err
 	}
+	for i := range evs {
+		evs[i].WorkspaceID, evs[i].WorkflowID = r.ex.WorkspaceID, r.ex.WorkflowID
+	}
 	if r.rt.OnEvents != nil {
 		fn := r.rt.OnEvents
 		r.tx.AfterCommit(func() { fn(evs) })

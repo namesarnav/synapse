@@ -37,6 +37,8 @@ type Config struct {
 	MaxQueueDepth       int // webhook/API starts are rejected (503) above this
 	MaxSubWorkflowDepth int
 	WSClientBuffer      int
+	WSMaxConns          int
+	AllowedOrigins      []string // extra WebSocket origins (host patterns); same-origin is always allowed
 
 	// Worker
 	WorkerID           string
@@ -80,6 +82,8 @@ func Load() (Config, error) {
 		MaxQueueDepth:       envInt("SYNAPSE_MAX_QUEUE_DEPTH", 100000),
 		MaxSubWorkflowDepth: envInt("SYNAPSE_MAX_SUBWORKFLOW_DEPTH", 5),
 		WSClientBuffer:      envInt("SYNAPSE_WS_BUFFER", 256),
+		WSMaxConns:          envInt("SYNAPSE_WS_MAX_CONNS", 5000),
+		AllowedOrigins:      splitList(env("SYNAPSE_ALLOWED_ORIGINS", "")),
 		WorkerID:            env("SYNAPSE_WORKER_ID", ""),
 		WorkerCapacity:      envInt("SYNAPSE_WORKER_CAPACITY", 16),
 		LeaseDuration:       envDur("SYNAPSE_LEASE_DURATION", 30*time.Second),
@@ -178,4 +182,14 @@ func envDur(k string, def time.Duration) time.Duration {
 		}
 	}
 	return def
+}
+
+func splitList(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

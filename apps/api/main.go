@@ -10,12 +10,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/namesarnav/synapse/internal/api"
 	"github.com/namesarnav/synapse/internal/config"
 	"github.com/namesarnav/synapse/internal/cron"
 	"github.com/namesarnav/synapse/internal/expressions"
 	"github.com/namesarnav/synapse/internal/logging"
 	"github.com/namesarnav/synapse/internal/persistence"
+	"github.com/namesarnav/synapse/internal/realtime"
 	"github.com/namesarnav/synapse/internal/runtime"
 	"github.com/namesarnav/synapse/internal/scheduler"
 	"github.com/namesarnav/synapse/internal/secrets"
@@ -54,8 +57,20 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	hub := realtime.NewHub(cfg.WSClientBuffer)
+	var rc *redis.Client
+	if cfg.RedisURL != "" {
+		opt, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			return fmt.Errorf("parse SYNAPSE_REDIS_URL: %w", err)
+		}
+		rc = redis.NewClient(opt)
+		defer rc.Close()
+	}
+	bus := realtime.NewBus(hub, rc, log)
+	go bus.Run(ctx)
 	rt := runtime.New(&runtime.Runtime{DB: db, Log: log, MaxDepth: cfg.MaxSubWorkflowDepth, MaxDeliveries: cfg.MaxDeliveries,
-		MaxQueueDepth: cfg.MaxQueueDepth, LeaseDuration: cfg.LeaseDuration, Secrets: sec})
+		MaxQueueDepth: cfg.MaxQueueDepth, LeaseDuration: cfg.LeaseDuration, Secrets: sec, OnEvents: bus.Publish})
 	if cfg.RunSchedulerInProc {
 		tr := &triggers.Store{DB: db, RT: rt, Log: log}
 		sch := scheduler.New(rt, scheduler.Config{WakeInterval: cfg.SchedulerTick, ReapInterval: cfg.SchedulerTick,
@@ -67,7 +82,7 @@ func run() error {
 			}}, log)
 		go sch.Run(ctx)
 	}
-	srv := api.New(api.Deps{Cfg: cfg, Log: log, DB: db, Runtime: rt, Secrets: sec, Checker: expressions.Checker{Cron: cron.Validate}})
+	srv := api.New(api.Deps{Cfg: cfg, Log: log, DB: db, Runtime: rt, Hub: hub, Secrets: sec, Checker: expressions.Checker{Cron: cron.Validate}})
 	hs := &http.Server{Addr: cfg.HTTPAddr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- hs.ListenAndServe() }()

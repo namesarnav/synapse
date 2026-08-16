@@ -50,7 +50,7 @@ load-test: dev-infra ## reproducible load tests (see docs/benchmarks)
 	SYNAPSE_REQUIRE_DB=1 $(GO) run ./tests/load -out docs/benchmarks/results.json
 
 benchmark: dev-infra ## Go micro-benchmarks (expressions, graph, queue)
-	SYNAPSE_REQUIRE_DB=1 $(GO) test -run xxx -bench . -benchmem ./internal/expressions ./internal/workflow ./internal/queue
+	SYNAPSE_REQUIRE_DB=1 $(GO) test -run xxx -bench . -benchmem ./internal/expressions ./internal/workflow ./internal/runtime
 
 chaos: dev-infra ## worker-kill recovery demo
 	./scripts/chaos-demo.sh

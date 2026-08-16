@@ -5,12 +5,14 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/namesarnav/synapse/internal/auth"
 	"github.com/namesarnav/synapse/internal/config"
 	"github.com/namesarnav/synapse/internal/persistence"
 	"github.com/namesarnav/synapse/internal/ratelimit"
+	"github.com/namesarnav/synapse/internal/realtime"
 	"github.com/namesarnav/synapse/internal/runtime"
 	"github.com/namesarnav/synapse/internal/secrets"
 	"github.com/namesarnav/synapse/internal/triggers"
@@ -29,6 +31,9 @@ type Deps struct {
 	Checker workflow.ExprChecker
 	// Runtime executes workflows; a default one is created when nil.
 	Runtime *runtime.Runtime
+	// Hub fans events out to WebSocket clients; built when nil. When Runtime is
+	// also nil its OnEvents hook is wired to the hub.
+	Hub *realtime.Hub
 	// Secrets stores workspace secrets; built from Cfg.MasterKey when nil.
 	Secrets *secrets.Store
 	// OnPublish runs after a new workflow version is published.
@@ -40,6 +45,11 @@ type Server struct {
 	Auth        *auth.Store
 	Workflows   *wfstore.Store
 	Triggers    *triggers.Store
+	Hub         *realtime.Hub
+	wsConns     atomic.Int64
+	wsMax       int
+	wsPing      time.Duration
+	wsTail      time.Duration
 	authLimiter *ratelimit.Limiter
 	hookLimiter *ratelimit.Limiter
 	mux         *http.ServeMux
@@ -57,9 +67,17 @@ func New(d Deps) *Server {
 		}
 		d.Secrets = st
 	}
+	if d.Hub == nil {
+		d.Hub = realtime.NewHub(d.Cfg.WSClientBuffer)
+	}
 	if d.Runtime == nil {
 		d.Runtime = runtime.New(&runtime.Runtime{DB: d.DB, Log: d.Log, MaxQueueDepth: d.Cfg.MaxQueueDepth,
-			MaxDepth: d.Cfg.MaxSubWorkflowDepth, LeaseDuration: d.Cfg.LeaseDuration, MaxDeliveries: d.Cfg.MaxDeliveries, Secrets: d.Secrets})
+			MaxDepth: d.Cfg.MaxSubWorkflowDepth, LeaseDuration: d.Cfg.LeaseDuration, MaxDeliveries: d.Cfg.MaxDeliveries,
+			Secrets: d.Secrets, OnEvents: d.Hub.Dispatch})
+	}
+	wsMax := d.Cfg.WSMaxConns
+	if wsMax <= 0 {
+		wsMax = 5000
 	}
 	hookRate, hookBurst := d.Cfg.WebhookRatePerSec, d.Cfg.WebhookRateBurst
 	if hookRate <= 0 {
@@ -77,6 +95,10 @@ func New(d Deps) *Server {
 		Workflows:   &wfstore.Store{DB: d.DB},
 		authLimiter: ratelimit.New(rate, d.Cfg.AuthRatePerMin),
 		hookLimiter: ratelimit.New(hookRate, hookBurst),
+		Hub:         d.Hub,
+		wsMax:       wsMax,
+		wsPing:      20 * time.Second,
+		wsTail:      2 * time.Second,
 		Triggers:    &triggers.Store{DB: d.DB, RT: d.Runtime, Log: d.Log},
 		mux:         http.NewServeMux(),
 	}
@@ -89,6 +111,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /health/ready", s.handleReady)
 
 	s.mux.HandleFunc("POST /hooks/{endpoint_id}", s.handleWebhook)
+
+	s.mux.HandleFunc("GET /ws/executions/{id}", withQueryToken(s.requireAuth(s.handleWSExecution)))
+	s.mux.HandleFunc("GET /ws/workspaces/{ws}", withQueryToken(s.requireWorkspace(auth.RoleViewer, s.handleWSWorkspace)))
 
 	const v1 = "/api/v1"
 	s.mux.HandleFunc("POST "+v1+"/auth/register", s.handleRegister)

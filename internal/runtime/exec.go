@@ -173,6 +173,16 @@ func (rt *Runtime) Get(ctx context.Context, workspaceID, id string) (*Execution,
 	return ex, err
 }
 
+// WorkspaceOf returns the workspace that owns an execution.
+func (rt *Runtime) WorkspaceOf(ctx context.Context, id string) (string, error) {
+	var ws string
+	err := rt.DB.Pool.QueryRow(ctx, `SELECT workspace_id::text FROM executions WHERE id::text=$1`, id).Scan(&ws)
+	if errors.Is(err, pgx.ErrNoRows) || persistence.IsInvalidText(err) {
+		return "", persistence.ErrNotFound
+	}
+	return ws, err
+}
+
 // Nodes returns the per-node state of an execution with inputs and outputs.
 func (rt *Runtime) Nodes(ctx context.Context, execID string) ([]NodeExec, error) {
 	rows, err := rt.DB.Pool.Query(ctx, `SELECT node_id, node_type, state, branch, attempt, input, output, error, wake_at,

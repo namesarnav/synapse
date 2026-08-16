@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,10 +14,12 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/namesarnav/synapse/internal/config"
 	"github.com/namesarnav/synapse/internal/logging"
 	"github.com/namesarnav/synapse/internal/persistence"
+	"github.com/namesarnav/synapse/internal/realtime"
 	"github.com/namesarnav/synapse/internal/runtime"
 	"github.com/namesarnav/synapse/internal/scheduler"
 	"github.com/namesarnav/synapse/internal/secrets"
@@ -78,6 +81,23 @@ func (p *Process) Close() {
 	p.DB.Close()
 }
 
+// NewBus connects live event fan-out to Redis when configured. Processes that
+// only emit events (workers, scheduler) pass publishOnly.
+func (p *Process) NewBus(hub *realtime.Hub, publishOnly bool) (*realtime.Bus, *redis.Client, error) {
+	var rc *redis.Client
+	if p.Cfg.RedisURL != "" {
+		opt, err := redis.ParseURL(p.Cfg.RedisURL)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parse SYNAPSE_REDIS_URL: %w", err)
+		}
+		rc = redis.NewClient(opt)
+	}
+	b := realtime.NewBus(hub, rc, p.Log)
+	b.PublishOnly = publishOnly
+	go b.Run(p.Ctx)
+	return b, rc, nil
+}
+
 // NewSecrets builds the encrypted secret store from the master key.
 func (p *Process) NewSecrets() (*secrets.Store, error) {
 	return secrets.New(p.DB, p.Cfg.MasterKey)
@@ -99,11 +119,11 @@ func (p *Process) NewScheduler(rt *runtime.Runtime) *scheduler.Scheduler {
 }
 
 // NewRuntime builds the durable runtime from configuration.
-func (p *Process) NewRuntime(secrets runtime.SecretProvider) *runtime.Runtime {
+func (p *Process) NewRuntime(secrets runtime.SecretProvider, onEvents func([]runtime.Event)) *runtime.Runtime {
 	c := p.Cfg
 	return runtime.New(&runtime.Runtime{
 		DB: p.DB, Log: p.Log, MaxDepth: c.MaxSubWorkflowDepth, MaxDeliveries: c.MaxDeliveries, MaxQueueDepth: c.MaxQueueDepth,
-		LeaseDuration: c.LeaseDuration, Secrets: secrets,
+		LeaseDuration: c.LeaseDuration, Secrets: secrets, OnEvents: onEvents,
 	})
 }
 
