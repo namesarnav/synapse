@@ -285,6 +285,7 @@ type ListParams struct {
 	Limit       int
 	AfterTime   *time.Time
 	AfterID     string
+	ReplayOf    string
 }
 
 // Summary is an execution without payloads.
@@ -319,6 +320,9 @@ func (rt *Runtime) List(ctx context.Context, p ListParams) ([]Summary, error) {
 	}
 	if p.Status != "" {
 		add("e.status = $%d", p.Status)
+	}
+	if p.ReplayOf != "" {
+		add("e.replay_of::text = $%d", p.ReplayOf)
 	}
 	if p.AfterTime != nil {
 		args = append(args, *p.AfterTime, p.AfterID)

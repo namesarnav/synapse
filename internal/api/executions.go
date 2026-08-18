@@ -40,6 +40,8 @@ func (s *Server) runtimeErr(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, s.Log, ErrUnprocessable(err.Error()))
 	case errors.Is(err, runtime.ErrTerminal):
 		writeError(w, r, s.Log, ErrConflict("execution already finished"))
+	case errors.Is(err, runtime.ErrNotReplayable):
+		writeError(w, r, s.Log, ErrConflict(err.Error()))
 	case errors.Is(err, runtime.ErrQueueFull):
 		w.Header().Set("Retry-After", "5")
 		writeError(w, r, s.Log, Err(http.StatusServiceUnavailable, "overloaded", "the execution queue is full; retry later"))
@@ -92,7 +94,7 @@ func (s *Server) handleListExecutions(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	p := runtime.ListParams{WorkspaceID: ws, Status: q.Get("status"), WorkflowID: q.Get("workflow_id"), Limit: limit}
+	p := runtime.ListParams{WorkspaceID: ws, Status: q.Get("status"), WorkflowID: q.Get("workflow_id"), ReplayOf: q.Get("replay_of"), Limit: limit}
 	if p.WorkflowID != "" && !uuidRe.MatchString(p.WorkflowID) {
 		writeError(w, r, s.Log, ErrBadRequest("invalid workflow_id"))
 		return
@@ -194,4 +196,32 @@ func (s *Server) handleCancelExecution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"execution": ex})
+}
+
+// handleReplayExecution starts a new execution from a finished one, either in
+// full or from a node ({node} in the path).
+func (s *Server) handleReplayExecution(w http.ResponseWriter, r *http.Request) {
+	ws, _ := workspaceFrom(r.Context())
+	a, _ := userFrom(r.Context())
+	id, ok := s.execID(w, r)
+	if !ok {
+		return
+	}
+	key := r.Header.Get("Idempotency-Key")
+	if len(key) > 200 {
+		writeError(w, r, s.Log, ErrUnprocessable("idempotency key is too long"))
+		return
+	}
+	res, err := s.Runtime.Replay(r.Context(), runtime.ReplayParams{
+		WorkspaceID: ws, ExecutionID: id, FromNode: r.PathValue("node"), CreatedBy: a.User.ID, IdempotencyKey: key,
+	})
+	if err != nil {
+		s.runtimeErr(w, r, err)
+		return
+	}
+	status := http.StatusAccepted
+	if res.Duplicate {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, map[string]any{"execution": res.Execution, "duplicate": res.Duplicate})
 }

@@ -155,3 +155,56 @@ func TestQueueFullReturns503(t *testing.T) {
 		t.Fatalf("second = %d retry-after=%q", r.Status, r.Header.Get("Retry-After"))
 	}
 }
+
+func TestReplayEndpoints(t *testing.T) {
+	h := newHarness(t)
+	h.startEngine()
+	owner := h.register("rp-owner@example.com")
+	viewer := h.register("rp-viewer@example.com")
+	stranger := h.register("rp-stranger@example.com")
+	if r := h.do("POST", fmt.Sprintf("/api/v1/workspaces/%s/members", owner.WorkspaceID), owner.Token, map[string]any{"email": viewer.Email, "role": "viewer"}); r.Status != 204 {
+		t.Fatalf("add viewer: %d", r.Status)
+	}
+	id := h.runOnce(owner, h.publishSimple(owner))
+	waitDone := func(execID string) runtime.Execution {
+		var got struct{ Execution runtime.Execution }
+		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+			h.do("GET", owner.ex("/"+execID), owner.Token, nil).JSON(t, &got)
+			if got.Execution.Status.Terminal() {
+				return got.Execution
+			}
+		}
+		t.Fatal("timeout")
+		return got.Execution
+	}
+	waitDone(id)
+
+	if r := h.do("POST", owner.ex("/"+id+"/replay"), viewer.Token, nil); r.Status != 403 {
+		t.Fatalf("viewer replay: %d", r.Status)
+	}
+	if r := h.do("POST", owner.ex("/"+id+"/replay"), stranger.Token, nil); r.Status != 404 {
+		t.Fatalf("stranger replay: %d", r.Status)
+	}
+	if r := h.do("POST", owner.ex("/"+id+"/replay/nope"), owner.Token, nil); r.Status != 409 {
+		t.Fatalf("unknown node: %d", r.Status)
+	}
+	r := h.do("POST", owner.ex("/"+id+"/replay/log"), owner.Token, nil)
+	if r.Status != 202 {
+		t.Fatalf("replay from node: %d %s", r.Status, r.Body)
+	}
+	var started struct{ Execution runtime.Execution }
+	r.JSON(t, &started)
+	re := waitDone(started.Execution.ID)
+	if re.Status != "succeeded" || re.ReplayOf == nil || *re.ReplayOf != id || re.ReplaySourceNode != "log" {
+		t.Fatalf("replay = %+v", re)
+	}
+	r = h.do("POST", owner.ex("/"+id+"/replay"), owner.Token, nil)
+	if r.Status != 202 {
+		t.Fatalf("full replay: %d %s", r.Status, r.Body)
+	}
+	var list struct{ Items []runtime.Summary }
+	h.do("GET", owner.ex("?replay_of="+id), owner.Token, nil).JSON(t, &list)
+	if len(list.Items) != 2 {
+		t.Fatalf("lineage list = %d", len(list.Items))
+	}
+}

@@ -144,6 +144,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET "+ws+"/executions", s.requireWorkspace(auth.RoleViewer, s.handleListExecutions))
 	s.mux.HandleFunc("GET "+ws+"/executions/{id}", s.requireWorkspace(auth.RoleViewer, s.handleGetExecution))
 	s.mux.HandleFunc("GET "+ws+"/executions/{id}/events", s.requireWorkspace(auth.RoleViewer, s.handleExecutionEvents))
+	s.mux.HandleFunc("POST "+ws+"/executions/{id}/replay", s.requireWorkspace(auth.RoleMember, s.handleReplayExecution))
+	s.mux.HandleFunc("POST "+ws+"/executions/{id}/replay/{node}", s.requireWorkspace(auth.RoleMember, s.handleReplayExecution))
 	s.mux.HandleFunc("POST "+ws+"/executions/{id}/cancel", s.requireWorkspace(auth.RoleMember, s.handleCancelExecution))
 }
 
