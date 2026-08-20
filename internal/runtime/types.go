@@ -189,6 +189,10 @@ const (
 	EvNodeLog       = "node.log"
 )
 
+// AllEventTypes lists every event type, used by the protocol drift check.
+var AllEventTypes = []string{EvExecCreated, EvExecStarted, EvExecSucceeded, EvExecFailed, EvExecCancelled, EvExecCancelReq,
+	EvNodeQueued, EvNodeStarted, EvNodeSucceeded, EvNodeFailed, EvNodeRetrying, EvNodeWaiting, EvNodeSkipped, EvNodeCancelled, EvNodeLog}
+
 func marshalJSON(v any) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {
