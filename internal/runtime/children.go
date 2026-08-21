@@ -12,6 +12,7 @@ import (
 
 	"github.com/namesarnav/synapse/internal/engine"
 	"github.com/namesarnav/synapse/internal/persistence"
+	"github.com/namesarnav/synapse/internal/tracing"
 	"github.com/namesarnav/synapse/internal/workflow"
 )
 
@@ -77,10 +78,10 @@ func (rt *Runtime) createExecution(ctx context.Context, tx *persistence.Tx, ne n
 	var id string
 	err = tx.QueryRow(ctx, `INSERT INTO executions
 		(workspace_id, workflow_id, version_id, kind, trigger_type, trigger_payload, start_node, context,
-		 idempotency_key, parent_execution_id, parent_node_id, item_index, depth, replay_of, replay_source_node, created_by, deadline_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id::text`,
+		 idempotency_key, parent_execution_id, parent_node_id, item_index, depth, replay_of, replay_source_node, created_by, deadline_at, traceparent)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id::text`,
 		ne.WorkspaceID, ne.WorkflowID, ne.VersionID, ne.Kind, ne.TriggerType, marshalJSON(ne.Trigger), ne.StartNode, marshalJSON(ne.Ctx),
-		idem, ne.Parent, parentNode, ne.ItemIndex, ne.Depth, replayOf, replaySrc, createdBy, deadline).Scan(&id)
+		idem, ne.Parent, parentNode, ne.ItemIndex, ne.Depth, replayOf, replaySrc, createdBy, deadline, tracing.Traceparent(ctx)).Scan(&id)
 	if err != nil {
 		return nil, err
 	}

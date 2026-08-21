@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 type ctxKey struct{}
@@ -63,6 +65,9 @@ type ctxHandler struct{ slog.Handler }
 func (h ctxHandler) Handle(ctx context.Context, r slog.Record) error {
 	if args, ok := ctx.Value(ctxKey{}).([]any); ok {
 		r.Add(args...)
+	}
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+		r.Add("trace_id", sc.TraceID().String(), "span_id", sc.SpanID().String())
 	}
 	return h.Handler.Handle(ctx, r)
 }

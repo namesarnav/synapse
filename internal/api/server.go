@@ -3,8 +3,10 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -15,6 +17,8 @@ import (
 	"github.com/namesarnav/synapse/internal/realtime"
 	"github.com/namesarnav/synapse/internal/runtime"
 	"github.com/namesarnav/synapse/internal/secrets"
+	"github.com/namesarnav/synapse/internal/telemetry"
+	"github.com/namesarnav/synapse/internal/tracing"
 	"github.com/namesarnav/synapse/internal/triggers"
 	"github.com/namesarnav/synapse/internal/workflow"
 	"github.com/namesarnav/synapse/internal/workflow/wfstore"
@@ -36,6 +40,8 @@ type Deps struct {
 	Hub *realtime.Hub
 	// Secrets stores workspace secrets; built from Cfg.MasterKey when nil.
 	Secrets *secrets.Store
+	// Metrics, when set, is served on /metrics and observes every request.
+	Metrics *telemetry.Metrics
 	// OnPublish runs after a new workflow version is published.
 	OnPublish func(ctx context.Context, workspaceID, workflowID string, v wfstore.Version)
 }
@@ -109,6 +115,9 @@ func New(d Deps) *Server {
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /health/live", s.handleLive)
 	s.mux.HandleFunc("GET /health/ready", s.handleReady)
+	if s.Metrics != nil {
+		s.mux.Handle("GET /metrics", s.metricsAuth(s.Metrics.Handler()))
+	}
 
 	s.mux.HandleFunc("POST /hooks/{endpoint_id}", s.handleWebhook)
 
@@ -151,10 +160,30 @@ func (s *Server) routes() {
 
 func (s *Server) Handler() http.Handler {
 	var h http.Handler = s.mux
-	h = withAccessLog(s.Log, nil)(h)
+	var observe func(string, string, int, time.Duration)
+	if s.Metrics != nil {
+		observe = s.Metrics.ObserveHTTP
+	}
+	h = withAccessLog(s.Log, observe)(h)
 	h = withRecover(s.Log)(h)
 	h = withRequestID(h)
-	return h
+	return tracing.HTTP(h)
+}
+
+// metricsAuth requires the configured bearer token, when there is one.
+func (s *Server) metricsAuth(next http.Handler) http.Handler {
+	tok := s.Cfg.MetricsToken
+	if tok == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if subtle.ConstantTimeCompare([]byte(got), []byte(tok)) != 1 {
+			writeError(w, r, s.Log, ErrUnauthorized())
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleLive(w http.ResponseWriter, _ *http.Request) {

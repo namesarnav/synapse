@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/namesarnav/synapse/internal/logging"
+	"github.com/namesarnav/synapse/internal/tracing"
 )
 
 // APIError is the structured error returned to clients:
@@ -159,6 +160,7 @@ func withAccessLog(log *slog.Logger, observe func(method, route string, status i
 			if route == "" {
 				route = "unmatched"
 			}
+			tracing.SetRoute(r.Context(), route)
 			if observe != nil {
 				observe(r.Method, route, rec.status, d)
 			}

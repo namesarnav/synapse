@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/namesarnav/synapse/internal/engine"
 	"github.com/namesarnav/synapse/internal/persistence"
+	"github.com/namesarnav/synapse/internal/tracing"
 	"github.com/namesarnav/synapse/internal/workflow"
 )
 
@@ -43,6 +45,17 @@ var triggerTypes = map[string]workflow.NodeType{
 // Start creates and begins an execution. With an idempotency key, repeated
 // calls return the original execution.
 func (rt *Runtime) Start(ctx context.Context, p StartParams) (*StartResult, error) {
+	ctx, span := tracing.Start(ctx, "execution.start", attribute.String("synapse.workflow_id", p.WorkflowID),
+		attribute.String("synapse.trigger_type", p.TriggerType))
+	res, err := rt.start(ctx, p)
+	if res != nil && res.Execution != nil {
+		span.SetAttributes(attribute.String("synapse.execution_id", res.Execution.ID), attribute.Bool("synapse.duplicate", res.Duplicate))
+	}
+	tracing.End(span, err)
+	return res, err
+}
+
+func (rt *Runtime) start(ctx context.Context, p StartParams) (*StartResult, error) {
 	if p.TriggerType == "" {
 		p.TriggerType = "manual"
 	}

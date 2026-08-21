@@ -13,7 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/namesarnav/synapse/internal/config"
@@ -23,17 +22,22 @@ import (
 	"github.com/namesarnav/synapse/internal/runtime"
 	"github.com/namesarnav/synapse/internal/scheduler"
 	"github.com/namesarnav/synapse/internal/secrets"
+	"github.com/namesarnav/synapse/internal/telemetry"
+	"github.com/namesarnav/synapse/internal/tracing"
 	"github.com/namesarnav/synapse/internal/triggers"
 	"github.com/namesarnav/synapse/migrations"
 )
 
 // Process is a running binary's shared state.
 type Process struct {
-	Cfg  config.Config
-	Log  *slog.Logger
-	DB   *persistence.DB
-	Ctx  context.Context
-	stop context.CancelFunc
+	Cfg config.Config
+	Log *slog.Logger
+	DB  *persistence.DB
+	Ctx context.Context
+	// Metrics is the process-wide Prometheus registry.
+	Metrics   *telemetry.Metrics
+	stop      context.CancelFunc
+	traceDown func(context.Context) error
 }
 
 // Boot loads config, connects to Postgres and applies migrations.
@@ -44,10 +48,15 @@ func Boot(service string, maxConns int32) (*Process, error) {
 	}
 	log := logging.New(service, cfg.LogLevel, os.Stdout, nil)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	traceDown, terr := tracing.Init(ctx, "synapse-"+service, cfg.OTLPEndpoint)
+	if terr != nil {
+		log.Warn("tracing disabled", "err", terr)
+		traceDown = func(context.Context) error { return nil }
+	}
 	var db *persistence.DB
 	// Postgres may still be starting when the container comes up.
 	for attempt := 0; ; attempt++ {
-		db, err = persistence.Connect(ctx, cfg.DatabaseURL, maxConns)
+		db, err = persistence.ConnectTraced(ctx, cfg.DatabaseURL, maxConns, tracing.PGX{})
 		if err == nil {
 			break
 		}
@@ -72,13 +81,18 @@ func Boot(service string, maxConns int32) (*Process, error) {
 	if len(ran) > 0 {
 		log.Info("migrations applied", "count", len(ran))
 	}
-	return &Process{Cfg: cfg, Log: log, DB: db, Ctx: ctx, stop: stop}, nil
+	m := telemetry.New()
+	m.RegisterDB(db)
+	return &Process{Cfg: cfg, Log: log, DB: db, Ctx: ctx, Metrics: m, stop: stop, traceDown: traceDown}, nil
 }
 
-// Close releases the process resources.
+// Close releases the process resources and flushes pending spans.
 func (p *Process) Close() {
 	p.stop()
 	p.DB.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = p.traceDown(ctx)
 }
 
 // NewBus connects live event fan-out to Redis when configured. Processes that
@@ -92,6 +106,7 @@ func (p *Process) NewBus(hub *realtime.Hub, publishOnly bool) (*realtime.Bus, *r
 		}
 		rc = redis.NewClient(opt)
 	}
+	hub.Metrics = p.Metrics.Hub()
 	b := realtime.NewBus(hub, rc, p.Log)
 	b.PublishOnly = publishOnly
 	go b.Run(p.Ctx)
@@ -107,7 +122,7 @@ func (p *Process) NewSecrets() (*secrets.Store, error) {
 func (p *Process) NewScheduler(rt *runtime.Runtime) *scheduler.Scheduler {
 	c := p.Cfg
 	tr := &triggers.Store{DB: p.DB, RT: rt, Log: p.Log}
-	return scheduler.New(rt, scheduler.Config{
+	s := scheduler.New(rt, scheduler.Config{
 		WakeInterval: c.SchedulerTick, ReapInterval: c.SchedulerTick, SweepInterval: 2 * c.SchedulerTick,
 		WorkerDeadAfter: c.WorkerDeadAfter, SweepAfter: c.SweepAfter,
 		ExtraTick: func(ctx context.Context) {
@@ -116,6 +131,8 @@ func (p *Process) NewScheduler(rt *runtime.Runtime) *scheduler.Scheduler {
 			}
 		},
 	}, p.Log)
+	s.Metrics = p.Metrics.Scheduler()
+	return s
 }
 
 // NewRuntime builds the durable runtime from configuration.
@@ -123,12 +140,18 @@ func (p *Process) NewRuntime(secrets runtime.SecretProvider, onEvents func([]run
 	c := p.Cfg
 	return runtime.New(&runtime.Runtime{
 		DB: p.DB, Log: p.Log, MaxDepth: c.MaxSubWorkflowDepth, MaxDeliveries: c.MaxDeliveries, MaxQueueDepth: c.MaxQueueDepth,
-		LeaseDuration: c.LeaseDuration, Secrets: secrets, OnEvents: onEvents,
+		LeaseDuration: c.LeaseDuration, Secrets: secrets, OnEvents: func(evs []runtime.Event) {
+			p.Metrics.ObserveEvents(evs)
+			if onEvents != nil {
+				onEvents(evs)
+			}
+		},
 	})
 }
 
-// ServeOps serves health and metrics endpoints until ctx is cancelled.
-func ServeOps(ctx context.Context, addr string, log *slog.Logger, db *persistence.DB, extra ...http.Handler) {
+// ServeOps serves health and metrics endpoints until the process stops.
+func (p *Process) ServeOps(addr string) {
+	ctx, log, db := p.Ctx, p.Log, p.DB
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -143,7 +166,7 @@ func ServeOps(ctx context.Context, addr string, log *slog.Logger, db *persistenc
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 	})
-	mux.Handle("GET /metrics", promhttp.Handler())
+	mux.Handle("GET /metrics", p.Metrics.Handler())
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

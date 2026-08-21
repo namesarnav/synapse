@@ -278,7 +278,7 @@ func (r *run) terminate(status engine.ExecState, msg string) error {
 	typ := map[engine.ExecState]string{
 		engine.ExecSucceeded: EvExecSucceeded, engine.ExecFailed: EvExecFailed, engine.ExecCancelled: EvExecCancelled,
 	}[status]
-	data := map[string]any{}
+	data := map[string]any{"duration_ms": now.Sub(r.ex.CreatedAt).Milliseconds()}
 	if msg != "" {
 		data["error"] = msg
 	}

@@ -42,6 +42,9 @@ type Work struct {
 	WorkspaceID string
 	Node        *workflow.Node
 	Ctx         *engine.Context
+	// Traceparent links worker spans to the trace that created the execution.
+	Traceparent string
+	WorkflowID  string
 }
 
 func (rt *Runtime) nodeTimeout(n *workflow.Node) time.Duration {
@@ -218,7 +221,7 @@ func (rt *Runtime) Begin(ctx context.Context, workerID string, t Task) (*Work, e
 		if err != nil {
 			return err
 		}
-		work = &Work{Task: t, WorkspaceID: r.ex.WorkspaceID, Node: n, Ctx: ectx}
+		work = &Work{Task: t, WorkspaceID: r.ex.WorkspaceID, Node: n, Ctx: ectx, Traceparent: r.ex.Traceparent, WorkflowID: r.ex.WorkflowID}
 		return nil
 	})
 	if err != nil {

@@ -30,7 +30,7 @@ func run() error {
 		return err
 	}
 	s := p.NewScheduler(p.NewRuntime(sec, bus.Publish))
-	app.ServeOps(p.Ctx, p.Cfg.WorkerMetricsAddr, p.Log, p.DB)
+	p.ServeOps(p.Cfg.WorkerMetricsAddr)
 	s.Run(p.Ctx)
 	return nil
 }

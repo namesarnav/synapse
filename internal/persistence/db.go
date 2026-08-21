@@ -21,12 +21,20 @@ type DB struct {
 
 // Connect opens a pool and verifies connectivity.
 func Connect(ctx context.Context, url string, maxConns int32) (*DB, error) {
+	return ConnectTraced(ctx, url, maxConns, nil)
+}
+
+// ConnectTraced is Connect with an optional pgx query tracer.
+func ConnectTraced(ctx context.Context, url string, maxConns int32, tracer pgx.QueryTracer) (*DB, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("parse database url: %w", err)
 	}
 	if maxConns > 0 {
 		cfg.MaxConns = maxConns
+	}
+	if tracer != nil {
+		cfg.ConnConfig.Tracer = tracer
 	}
 	cfg.MaxConnLifetime = 30 * time.Minute
 	cfg.HealthCheckPeriod = 30 * time.Second

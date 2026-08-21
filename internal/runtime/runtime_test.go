@@ -30,6 +30,9 @@ func TestBasicRunSucceeds(t *testing.T) {
 	if err != nil || len(evs) < 6 || evs[0].Type != runtime.EvExecCreated || evs[len(evs)-1].Type != runtime.EvExecSucceeded {
 		t.Fatalf("events: %v err=%v", evs, err)
 	}
+	if _, ok := evs[len(evs)-1].Data["duration_ms"]; !ok {
+		t.Fatalf("terminal event has no duration_ms: %v", evs[len(evs)-1].Data)
+	}
 }
 
 func TestStartRequiresPublished(t *testing.T) {

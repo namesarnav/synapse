@@ -15,10 +15,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/namesarnav/synapse/internal/cron"
 	"github.com/namesarnav/synapse/internal/persistence"
 	"github.com/namesarnav/synapse/internal/runtime"
+	"github.com/namesarnav/synapse/internal/tracing"
 	"github.com/namesarnav/synapse/internal/workflow"
 )
 
@@ -231,10 +233,12 @@ func (s *Store) FireDue(ctx context.Context, limit int) (int, error) {
 			var payload map[string]any
 			_ = json.Unmarshal(d.payload, &payload)
 			trig := map[string]any{"scheduled_for": d.nominal.UTC().Format(time.RFC3339), "payload": payload}
-			_, err := s.RT.Start(ctx, runtime.StartParams{
+			sctx, span := tracing.Start(ctx, "schedule.fire", attribute.String("synapse.workflow_id", d.wf))
+			_, err := s.RT.Start(sctx, runtime.StartParams{
 				WorkspaceID: d.ws, WorkflowID: d.wf, VersionID: d.ver, TriggerType: "schedule", Trigger: trig, StartNode: d.node,
 				IdempotencyKey: fmt.Sprintf("schedule:%s:%s:%d", d.wf, d.node, d.nominal.Unix()),
 			})
+			tracing.End(span, err)
 			if err != nil && !errors.Is(err, runtime.ErrNotPublished) {
 				// Leave the row due; the next tick retries with the same key.
 				s.log().Warn("schedule fire failed", "workflow", d.wf, "node", d.node, "err", err)

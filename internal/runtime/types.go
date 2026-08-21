@@ -125,6 +125,7 @@ type Execution struct {
 	Depth            int              `json:"depth"`
 	ReplayOf         *string          `json:"replay_of,omitempty"`
 	ReplaySourceNode string           `json:"replay_source_node,omitempty"`
+	Traceparent      string           `json:"-"`
 	IdempotencyKey   *string          `json:"idempotency_key,omitempty"`
 	DeadlineAt       *time.Time       `json:"deadline_at,omitempty"`
 	CreatedAt        time.Time        `json:"created_at"`

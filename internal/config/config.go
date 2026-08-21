@@ -61,6 +61,8 @@ type Config struct {
 
 	// Telemetry
 	OTLPEndpoint string
+	// MetricsToken, when set, is required as a Bearer token on /metrics.
+	MetricsToken string
 }
 
 func Load() (Config, error) {
@@ -98,6 +100,7 @@ func Load() (Config, error) {
 		SchedulerTick:       envDur("SYNAPSE_SCHEDULER_TICK", time.Second),
 		SweepAfter:          envDur("SYNAPSE_SWEEP_AFTER", 15*time.Second),
 		OTLPEndpoint:        env("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		MetricsToken:        env("SYNAPSE_METRICS_TOKEN", ""),
 		NodeTypeLimits:      map[string]int{},
 	}
 	if v := os.Getenv("SYNAPSE_NODE_LIMITS"); v != "" { // e.g. http_request=50,email=10

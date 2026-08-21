@@ -9,9 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/namesarnav/synapse/internal/engine"
 	"github.com/namesarnav/synapse/internal/nodes"
 	"github.com/namesarnav/synapse/internal/runtime"
+	"github.com/namesarnav/synapse/internal/tracing"
 	"github.com/namesarnav/synapse/internal/workflow"
 )
 
@@ -223,7 +226,7 @@ func (w *Worker) start(runCtx context.Context, t runtime.Task) {
 
 // execute runs one claimed task end to end.
 func (w *Worker) execute(ctx context.Context, t runtime.Task) {
-	log := w.Log.With("execution", t.ExecutionID, "node", t.NodeID, "attempt", t.Attempt, "task", t.ID)
+	log := w.Log.With("execution_id", t.ExecutionID, "node_id", t.NodeID, "attempt", t.Attempt, "task_id", t.ID, "worker_id", w.Cfg.ID)
 	// Bookkeeping uses a context detached from task cancellation.
 	bk := context.WithoutCancel(ctx)
 	work, err := w.RT.Begin(bk, w.Cfg.ID, t)
@@ -233,9 +236,24 @@ func (w *Worker) execute(ctx context.Context, t runtime.Task) {
 		}
 		return
 	}
+	log = log.With("workflow_id", work.WorkflowID)
+	ctx = tracing.WithTraceparent(ctx, work.Traceparent)
+	ctx, span := tracing.Start(ctx, "node "+t.NodeID, attribute.String("synapse.execution_id", t.ExecutionID),
+		attribute.String("synapse.workflow_id", work.WorkflowID), attribute.String("synapse.node_id", t.NodeID),
+		attribute.String("synapse.node_type", t.NodeType), attribute.Int("synapse.attempt", t.Attempt),
+		attribute.String("synapse.worker_id", w.Cfg.ID))
+	bk = context.WithoutCancel(ctx)
 	start := time.Now()
 	out, nerr := w.run(ctx, work, log)
 	elapsed := time.Since(start)
+	defer func() {
+		if nerr != nil {
+			span.SetAttributes(attribute.String("synapse.error_code", string(nerr.Code)))
+			tracing.End(span, errors.New(nerr.Message))
+			return
+		}
+		span.End()
+	}()
 	cause := context.Cause(ctx)
 	switch {
 	case errors.Is(cause, errLeaseLost), errors.Is(cause, errCancelled):

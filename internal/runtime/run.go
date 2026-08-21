@@ -45,7 +45,7 @@ type run struct {
 const execCols = `e.id::text, e.workspace_id::text, e.workflow_id::text, e.version_id::text, v.version, e.kind, e.status,
 	e.trigger_type, e.trigger_payload, e.start_node, e.context, e.output, coalesce(e.error,''),
 	e.parent_execution_id::text, coalesce(e.parent_node_id,''), e.item_index, e.depth, e.replay_of::text,
-	coalesce(e.replay_source_node,''), e.idempotency_key, e.deadline_at, e.created_at, e.started_at, e.finished_at`
+	coalesce(e.replay_source_node,''), e.idempotency_key, e.deadline_at, e.created_at, e.started_at, e.finished_at, e.traceparent`
 
 func scanExecution(row pgx.Row) (*Execution, error) {
 	var ex Execution
@@ -54,7 +54,7 @@ func scanExecution(row pgx.Row) (*Execution, error) {
 	err := row.Scan(&ex.ID, &ex.WorkspaceID, &ex.WorkflowID, &ex.VersionID, &ex.Version, &ex.Kind, &status,
 		&ex.TriggerType, &trig, &ex.StartNode, &ctxb, &out, &ex.Error,
 		&ex.ParentExecution, &ex.ParentNode, &ex.ItemIndex, &ex.Depth, &ex.ReplayOf,
-		&ex.ReplaySourceNode, &ex.IdempotencyKey, &ex.DeadlineAt, &ex.CreatedAt, &ex.StartedAt, &ex.FinishedAt)
+		&ex.ReplaySourceNode, &ex.IdempotencyKey, &ex.DeadlineAt, &ex.CreatedAt, &ex.StartedAt, &ex.FinishedAt, &ex.Traceparent)
 	if err != nil {
 		return nil, persistence.NotFound(err)
 	}

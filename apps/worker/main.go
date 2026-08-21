@@ -42,6 +42,7 @@ func run() error {
 		ID: cfg.WorkerID, Host: host, Concurrency: cfg.WorkerCapacity, PollInterval: cfg.PollInterval,
 		HeartbeatInterval: cfg.HeartbeatInterval, ShutdownGrace: cfg.ShutdownTimeout, TypeLimits: cfg.NodeTypeLimits, Redact: sec.RedactFor,
 	}, p.Log)
-	app.ServeOps(p.Ctx, cfg.WorkerMetricsAddr, p.Log, p.DB)
+	w.Metrics = p.Metrics.Worker()
+	p.ServeOps(cfg.WorkerMetricsAddr)
 	return w.Run(p.Ctx)
 }

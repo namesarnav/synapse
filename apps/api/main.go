@@ -22,6 +22,8 @@ import (
 	"github.com/namesarnav/synapse/internal/runtime"
 	"github.com/namesarnav/synapse/internal/scheduler"
 	"github.com/namesarnav/synapse/internal/secrets"
+	"github.com/namesarnav/synapse/internal/telemetry"
+	"github.com/namesarnav/synapse/internal/tracing"
 	"github.com/namesarnav/synapse/internal/triggers"
 	"github.com/namesarnav/synapse/migrations"
 )
@@ -42,7 +44,18 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	db, err := persistence.Connect(ctx, cfg.DatabaseURL, 20)
+	traceDown, err := tracing.Init(ctx, "synapse-api", cfg.OTLPEndpoint)
+	if err != nil {
+		log.Warn("tracing disabled", "err", err)
+		traceDown = func(context.Context) error { return nil }
+	}
+	defer func() {
+		c, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = traceDown(c)
+	}()
+
+	db, err := persistence.ConnectTraced(ctx, cfg.DatabaseURL, 20, tracing.PGX{})
 	if err != nil {
 		return err
 	}
@@ -57,7 +70,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	metrics := telemetry.New()
+	metrics.RegisterDB(db)
 	hub := realtime.NewHub(cfg.WSClientBuffer)
+	hub.Metrics = metrics.Hub()
 	var rc *redis.Client
 	if cfg.RedisURL != "" {
 		opt, err := redis.ParseURL(cfg.RedisURL)
@@ -70,7 +86,11 @@ func run() error {
 	bus := realtime.NewBus(hub, rc, log)
 	go bus.Run(ctx)
 	rt := runtime.New(&runtime.Runtime{DB: db, Log: log, MaxDepth: cfg.MaxSubWorkflowDepth, MaxDeliveries: cfg.MaxDeliveries,
-		MaxQueueDepth: cfg.MaxQueueDepth, LeaseDuration: cfg.LeaseDuration, Secrets: sec, OnEvents: bus.Publish})
+		MaxQueueDepth: cfg.MaxQueueDepth, LeaseDuration: cfg.LeaseDuration, Secrets: sec,
+		OnEvents: func(evs []runtime.Event) {
+			metrics.ObserveEvents(evs)
+			bus.Publish(evs)
+		}})
 	if cfg.RunSchedulerInProc {
 		tr := &triggers.Store{DB: db, RT: rt, Log: log}
 		sch := scheduler.New(rt, scheduler.Config{WakeInterval: cfg.SchedulerTick, ReapInterval: cfg.SchedulerTick,
@@ -80,9 +100,10 @@ func run() error {
 					log.Error("fire schedules", "err", err)
 				}
 			}}, log)
+		sch.Metrics = metrics.Scheduler()
 		go sch.Run(ctx)
 	}
-	srv := api.New(api.Deps{Cfg: cfg, Log: log, DB: db, Runtime: rt, Hub: hub, Secrets: sec, Checker: expressions.Checker{Cron: cron.Validate}})
+	srv := api.New(api.Deps{Cfg: cfg, Log: log, DB: db, Runtime: rt, Hub: hub, Secrets: sec, Metrics: metrics, Checker: expressions.Checker{Cron: cron.Validate}})
 	hs := &http.Server{Addr: cfg.HTTPAddr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- hs.ListenAndServe() }()
