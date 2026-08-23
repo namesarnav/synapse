@@ -1,0 +1,32 @@
+goos: linux
+goarch: amd64
+pkg: github.com/namesarnav/synapse/internal/expressions
+cpu: Intel(R) Core(TM) i5-7300HQ CPU @ 2.50GHz
+BenchmarkEval-4    	 4409724	       547.0 ns/op	     128 B/op	       8 allocs/op
+BenchmarkParse-4   	  517728	      4577 ns/op	    3608 B/op	      31 allocs/op
+PASS
+ok  	github.com/namesarnav/synapse/internal/expressions	5.387s
+goos: linux
+goarch: amd64
+pkg: github.com/namesarnav/synapse/internal/engine
+cpu: Intel(R) Core(TM) i5-7300HQ CPU @ 2.50GHz
+BenchmarkResolve-4   	   85798	     26886 ns/op	   16712 B/op	     209 allocs/op
+PASS
+ok  	github.com/namesarnav/synapse/internal/engine	2.596s
+goos: linux
+goarch: amd64
+pkg: github.com/namesarnav/synapse/internal/realtime
+cpu: Intel(R) Core(TM) i5-7300HQ CPU @ 2.50GHz
+BenchmarkDispatch/subs=1-4         	12600626	       187.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDispatch/subs=100-4       	  126121	     19094 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDispatch/subs=1000-4      	   11917	    200615 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/namesarnav/synapse/internal/realtime	98.618s
+goos: linux
+goarch: amd64
+pkg: github.com/namesarnav/synapse/internal/runtime
+cpu: Intel(R) Core(TM) i5-7300HQ CPU @ 2.50GHz
+BenchmarkStartExecution-4       	     733	   3138326 ns/op	   21441 B/op	     401 allocs/op
+BenchmarkClaimBeginComplete-4   	     657	   4121349 ns/op	   27125 B/op	     483 allocs/op
+PASS
+ok  	github.com/namesarnav/synapse/internal/runtime	9.419s

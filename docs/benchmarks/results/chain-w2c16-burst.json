@@ -1,0 +1,40 @@
+{
+  "accepted": 3000,
+  "completed_per_s": 147.76164745962265,
+  "drain_seconds": 20.302968,
+  "end_to_end_ms": {
+    "max": 14815.421,
+    "mean": 13414.373267333334,
+    "p50": 13901.0145,
+    "p95": 14699.1285,
+    "p99": 14760.29162
+  },
+  "failed": 0,
+  "git": "5516e7e",
+  "hardware": {
+    "cpu": "Intel(R) Core(TM) i5-7300HQ CPU @ 2.50GHz",
+    "go": "go1.27.1",
+    "logical_cpus": 4,
+    "memory_gb": "15.0",
+    "os": "linux/amd64"
+  },
+  "label": "2 worker(s) x capacity 16, api+scheduler in one process, postgres 16.15 (fsync=off, synchronous_commit=off), redis off, all processes on one host",
+  "redelivered_tasks": 0,
+  "scenario": "chain",
+  "submit_concurrency": 32,
+  "submit_errors": 0,
+  "submit_latency_ms": {
+    "p50": 75.16607,
+    "p95": 103.900809,
+    "p99": 138.11726499999997
+  },
+  "submit_per_s": 415.39602934912796,
+  "submit_seconds": 7.222023775,
+  "submitted": 3000,
+  "succeeded": 3000,
+  "target_rate_per_s": 0,
+  "tasks": 9000,
+  "tasks_per_s": 443.284942378868,
+  "unfinished": 0,
+  "when": "2026-09-20T08:34:45Z"
+}

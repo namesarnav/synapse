@@ -381,3 +381,13 @@ func BenchmarkEval(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkParse(b *testing.B) {
+	const src = `trigger.body.n * 2 + length(trigger.body.tags) > 5 ? upper(trigger.body.name) : "no"`
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := Parse(src); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

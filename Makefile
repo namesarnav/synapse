@@ -47,10 +47,10 @@ e2e: dev-infra ## end-to-end tests through the public webhook endpoint
 	SYNAPSE_REQUIRE_DB=1 $(GO) test -count=1 -timeout 10m ./tests/e2e/...
 
 load-test: dev-infra ## reproducible load tests (see docs/benchmarks)
-	SYNAPSE_REQUIRE_DB=1 $(GO) run ./tests/load -out docs/benchmarks/results.json
+	tests/load/suite.sh
 
 benchmark: dev-infra ## Go micro-benchmarks (expressions, graph, queue)
-	SYNAPSE_REQUIRE_DB=1 $(GO) test -run xxx -bench . -benchmem ./internal/expressions ./internal/workflow ./internal/runtime
+	SYNAPSE_REQUIRE_DB=1 $(GO) test -run xxx -bench . -benchmem ./internal/expressions ./internal/engine ./internal/realtime ./internal/runtime
 
 chaos: dev-infra ## worker-kill recovery demo
 	./scripts/chaos-demo.sh
