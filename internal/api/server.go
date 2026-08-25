@@ -97,7 +97,7 @@ func New(d Deps) *Server {
 	}
 	s := &Server{
 		Deps:        d,
-		Auth:        &auth.Store{DB: d.DB},
+		Auth:        &auth.Store{DB: d.DB, TTL: d.Cfg.SessionTTL},
 		Workflows:   &wfstore.Store{DB: d.DB},
 		authLimiter: ratelimit.New(rate, d.Cfg.AuthRatePerMin),
 		hookLimiter: ratelimit.New(hookRate, hookBurst),

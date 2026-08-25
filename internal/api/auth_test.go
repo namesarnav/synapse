@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/namesarnav/synapse/internal/config"
 )
 
 func TestRegisterLoginLogout(t *testing.T) {
@@ -171,5 +174,16 @@ func TestMalformedBodies(t *testing.T) {
 		if res.StatusCode != 400 {
 			t.Errorf("%s: got %d want 400", name, res.StatusCode)
 		}
+	}
+}
+
+func TestSessionTTLIsConfigurable(t *testing.T) {
+	h := newHarnessWith(t, func(c *config.Config) { c.SessionTTL = 90 * time.Minute })
+	a := h.register("ttl@example.com")
+	r := h.do("GET", "/api/v1/auth/me", a.Token, nil)
+	var s sessionResp
+	r.JSON(t, &s)
+	if d := time.Until(s.ExpiresAt); d > 90*time.Minute || d < 85*time.Minute {
+		t.Errorf("session expires in %s, want about 90m", d)
 	}
 }

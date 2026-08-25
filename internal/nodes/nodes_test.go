@@ -157,6 +157,8 @@ func TestHTTPRejectsHeaderInjectionAndOversizeBody(t *testing.T) {
 func TestBlockedIPRanges(t *testing.T) {
 	for s, want := range map[string]bool{"127.0.0.1": true, "10.1.2.3": true, "172.16.0.1": true, "192.168.0.5": true, "169.254.169.254": true,
 		"::1": true, "fe80::1": true, "fc00::1": true, "100.64.0.1": true, "::ffff:127.0.0.1": true, "0.0.0.0": true,
+		"0.1.2.3": true, "255.255.255.255": true, "240.0.0.1": true, "198.18.0.1": true, "192.0.0.8": true,
+		"64:ff9b::7f00:1": true, "2002:7f00:1::1": true, "::": true, "ff02::1": true, "192.0.2.1": true,
 		"8.8.8.8": false, "1.1.1.1": false, "2606:4700:4700::1111": false} {
 		if got := blockedIP(netip.MustParseAddr(s)); got != want {
 			t.Errorf("blockedIP(%s) = %v, want %v", s, got, want)
@@ -188,5 +190,24 @@ func TestTransformAndLogAndEmail(t *testing.T) {
 	out, err = reg[workflow.TypeEmail].Execute(context.Background(), input(t, workflow.TypeEmail, map[string]any{"to": "a@b.c", "subject": "Hi {{ trigger.who }}", "body": "x"}, vars))
 	if err != nil || len(mailer.Sent()) != 1 || mailer.Sent()[0].Subject != "Hi Ada" || out.(map[string]any)["provider"] != "mock" {
 		t.Errorf("email: %v %v %v", out, err, mailer.Sent())
+	}
+}
+
+func TestSSRFGuardBlocksLoopbackByDefault(t *testing.T) {
+	hit := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hit <- struct{}{} }))
+	defer srv.Close()
+	ex := NewHTTPExecutor(HTTPOptions{})
+	for _, u := range []string{srv.URL, strings.Replace(srv.URL, "127.0.0.1", "localhost", 1), strings.Replace(srv.URL, "127.0.0.1", "[::1]", 1),
+		strings.Replace(srv.URL, "127.0.0.1", "2130706433", 1), strings.Replace(srv.URL, "127.0.0.1", "0x7f.1", 1)} {
+		_, err := ex.Execute(context.Background(), input(t, workflow.TypeHTTPRequest, map[string]any{"url": u}, nil))
+		if err == nil {
+			t.Errorf("%s: expected an error", u)
+		}
+	}
+	select {
+	case <-hit:
+		t.Fatal("the guard let a request reach a loopback server")
+	default:
 	}
 }

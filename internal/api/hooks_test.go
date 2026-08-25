@@ -235,3 +235,49 @@ func TestScheduleCronValidatedOnPublish(t *testing.T) {
 		t.Fatalf("schedule rows = %d", n)
 	}
 }
+
+func TestSecretsRoleEnforcement(t *testing.T) {
+	h := newHarness(t)
+	owner := h.register("sec-owner@example.com")
+	viewer := h.register("sec-viewer@example.com")
+	member := h.register("sec-member@example.com")
+	members := fmt.Sprintf("/api/v1/workspaces/%s/members", owner.WorkspaceID)
+	for _, m := range []struct {
+		a    account
+		role string
+	}{{viewer, "viewer"}, {member, "member"}} {
+		if r := h.do("POST", members, owner.Token, map[string]any{"email": m.a.Email, "role": m.role}); r.Status != 204 {
+			t.Fatalf("add %s: %d %s", m.role, r.Status, r.Body)
+		}
+	}
+	if r := h.putSecret(owner, "TOKEN", "value-abcdef"); r.Status != 204 {
+		t.Fatalf("owner put = %d", r.Status)
+	}
+	path := fmt.Sprintf("/api/v1/workspaces/%s/secrets", owner.WorkspaceID)
+	put := func(a account) resp {
+		return h.do("PUT", path+"/OTHER", a.Token, map[string]any{"value": "x-value"})
+	}
+	// Viewers cannot see that secrets exist, let alone change them.
+	if r := h.do("GET", path, viewer.Token, nil); r.Status != 403 {
+		t.Errorf("viewer list = %d", r.Status)
+	}
+	if r := put(viewer); r.Status != 403 {
+		t.Errorf("viewer put = %d", r.Status)
+	}
+	if r := h.do("DELETE", path+"/TOKEN", viewer.Token, nil); r.Status != 403 {
+		t.Errorf("viewer delete = %d", r.Status)
+	}
+	// Members can list names but only admins write.
+	if r := h.do("GET", path, member.Token, nil); r.Status != 200 || strings.Contains(string(r.Body), "value-abcdef") {
+		t.Errorf("member list = %d %s", r.Status, r.Body)
+	}
+	if r := put(member); r.Status != 403 {
+		t.Errorf("member put = %d", r.Status)
+	}
+	if r := h.do("DELETE", path+"/TOKEN", member.Token, nil); r.Status != 403 {
+		t.Errorf("member delete = %d", r.Status)
+	}
+	if r := h.do("GET", path, owner.Token, nil); !strings.Contains(string(r.Body), "TOKEN") {
+		t.Errorf("secret vanished after forbidden deletes: %s", r.Body)
+	}
+}

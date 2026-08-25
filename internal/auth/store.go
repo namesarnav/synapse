@@ -53,10 +53,14 @@ var (
 	ErrInvalidCredentials = errors.New("invalid email or password")
 )
 
-const SessionTTL = 7 * 24 * time.Hour
+// DefaultSessionTTL applies when Store.TTL is unset.
+const DefaultSessionTTL = 7 * 24 * time.Hour
 
 // Store persists users, workspaces and sessions.
-type Store struct{ DB *persistence.DB }
+type Store struct {
+	DB  *persistence.DB
+	TTL time.Duration // session lifetime; DefaultSessionTTL when zero
+}
 
 func NormalizeEmail(e string) string { return strings.ToLower(strings.TrimSpace(e)) }
 
@@ -148,7 +152,11 @@ func (s *Store) CreateSession(ctx context.Context, userID, userAgent string) (to
 		return
 	}
 	token = base64.RawURLEncoding.EncodeToString(raw[:])
-	sess = Session{UserID: userID, ExpiresAt: time.Now().Add(SessionTTL)}
+	ttl := s.TTL
+	if ttl <= 0 {
+		ttl = DefaultSessionTTL
+	}
+	sess = Session{UserID: userID, ExpiresAt: time.Now().Add(ttl)}
 	if len(userAgent) > 300 {
 		userAgent = userAgent[:300]
 	}

@@ -81,11 +81,30 @@ func NewHTTPExecutor(o HTTPOptions) Executor {
 	return e
 }
 
+// blockedPrefixes are special-purpose ranges not covered by the netip predicates.
+var blockedPrefixes = func() []netip.Prefix {
+	var ps []netip.Prefix
+	for _, s := range []string{
+		"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15", "198.51.100.0/24",
+		"203.0.113.0/24", "240.0.0.0/4", "64:ff9b::/96", "64:ff9b:1::/48", "2001::/23", "2001:db8::/32", "2002::/16",
+	} {
+		ps = append(ps, netip.MustParsePrefix(s))
+	}
+	return ps
+}()
+
 func blockedIP(ip netip.Addr) bool {
 	ip = ip.Unmap()
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsMulticast() || ip.IsUnspecified() || ip.IsInterfaceLocalMulticast() ||
-		(ip.Is4() && ip.As4()[0] == 100 && ip.As4()[1]&0xC0 == 64) // 100.64.0.0/10 CGNAT
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsUnspecified() || ip.IsInterfaceLocalMulticast() {
+		return true
+	}
+	for _, p := range blockedPrefixes {
+		if p.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *httpExec) Execute(ctx context.Context, in Input) (any, error) {
