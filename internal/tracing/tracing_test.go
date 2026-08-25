@@ -81,3 +81,17 @@ func TestInitDisabledWithoutEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestTracesURL(t *testing.T) {
+	cases := map[string]string{
+		"http://jaeger:4318":              "http://jaeger:4318/v1/traces",
+		"http://jaeger:4318/":             "http://jaeger:4318/v1/traces",
+		"https://otel.example.com/custom": "https://otel.example.com/custom",
+		"http://jaeger:4318/v1/traces":    "http://jaeger:4318/v1/traces",
+	}
+	for in, want := range cases {
+		if got := tracesURL(in); got != want {
+			t.Errorf("tracesURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

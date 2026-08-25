@@ -1,15 +1,16 @@
-# syntax=docker/dockerfile:1
-# One Dockerfile for all Go binaries: docker build --build-arg APP=api|worker|scheduler
+# One image recipe for every Go service: docker build --build-arg APP=api|worker|scheduler
 FROM golang:1.27-alpine AS build
+ARG APP
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
+RUN go mod download
 COPY . .
-ARG APP=api
-RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/app ./apps/${APP}
+RUN test -n "$APP" && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/service ./apps/$APP
 
-FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/app /app
-USER nonroot:nonroot
-ENTRYPOINT ["/app"]
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates tzdata wget && adduser -D -u 10001 synapse
+COPY --from=build /out/service /usr/local/bin/synapse
+USER synapse
+# api listens on 8080; worker and scheduler expose /metrics and health on 8081
+EXPOSE 8080 8081
+ENTRYPOINT ["/usr/local/bin/synapse"]

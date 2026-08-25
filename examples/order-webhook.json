@@ -1,0 +1,23 @@
+{
+  "name": "Order webhook",
+  "description": "Webhook in, branch on order size. Big orders log, wait 20 seconds durably, then log again.",
+  "graph": {
+    "nodes": [
+      { "id": "hook", "type": "webhook_trigger", "name": "Order received", "config": {}, "metadata": { "position": { "x": 0, "y": 120 } } },
+      { "id": "calc", "type": "transform", "name": "Compute total", "config": { "output": { "total": "{{ trigger.body.amount * trigger.body.qty }}", "customer": "{{ trigger.body.customer }}" } }, "metadata": { "position": { "x": 240, "y": 120 } } },
+      { "id": "big", "type": "condition", "name": "Total over 100?", "config": { "expression": "nodes.calc.total > 100" }, "metadata": { "position": { "x": 480, "y": 120 } } },
+      { "id": "notify", "type": "log", "name": "Big order", "config": { "message": "big order from {{ nodes.calc.customer }}: {{ nodes.calc.total }}" }, "metadata": { "position": { "x": 720, "y": 40 } } },
+      { "id": "wait", "type": "delay", "name": "Wait 20s", "config": { "duration": "20s" }, "metadata": { "position": { "x": 960, "y": 40 } } },
+      { "id": "followup", "type": "log", "name": "Follow up", "config": { "message": "following up on {{ nodes.calc.customer }}" }, "metadata": { "position": { "x": 1200, "y": 40 } } },
+      { "id": "small", "type": "stop", "name": "Small order", "config": { "status": "succeeded", "message": "nothing to do" }, "metadata": { "position": { "x": 720, "y": 220 } } }
+    ],
+    "edges": [
+      { "id": "e1", "source": "hook", "target": "calc" },
+      { "id": "e2", "source": "calc", "target": "big" },
+      { "id": "e3", "source": "big", "target": "notify", "branch": "true" },
+      { "id": "e4", "source": "notify", "target": "wait" },
+      { "id": "e5", "source": "wait", "target": "followup" },
+      { "id": "e6", "source": "big", "target": "small", "branch": "false" }
+    ]
+  }
+}

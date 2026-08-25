@@ -1,0 +1,11 @@
+{
+  "name": "Every minute",
+  "description": "A cron schedule that logs the time it fired.",
+  "graph": {
+    "nodes": [
+      { "id": "tick", "type": "schedule_trigger", "name": "Every minute", "config": { "cron": "* * * * *", "timezone": "UTC" }, "metadata": { "position": { "x": 0, "y": 40 } } },
+      { "id": "say", "type": "log", "name": "Log", "config": { "message": "scheduled run" }, "metadata": { "position": { "x": 240, "y": 40 } } }
+    ],
+    "edges": [{ "id": "e1", "source": "tick", "target": "say" }]
+  }
+}

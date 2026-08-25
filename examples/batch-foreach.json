@@ -1,0 +1,17 @@
+{
+  "name": "Batch with foreach",
+  "description": "Fan out over a list, run a transform per item with bounded concurrency, then summarise.",
+  "graph": {
+    "nodes": [
+      { "id": "start", "type": "manual_trigger", "name": "Start", "config": { "sample": { "numbers": [1, 2, 3, 4, 5, 6, 7, 8] } }, "metadata": { "position": { "x": 0, "y": 100 } } },
+      { "id": "each", "type": "foreach", "name": "Each number", "config": { "items": "trigger.numbers", "concurrency": 3 }, "metadata": { "position": { "x": 240, "y": 100 } } },
+      { "id": "square", "type": "transform", "name": "Square", "config": { "expression": "item * item" }, "metadata": { "position": { "x": 480, "y": 20 } } },
+      { "id": "sum", "type": "transform", "name": "Summarise", "config": { "output": { "count": "{{ length(nodes.each.items) }}", "results": "{{ nodes.each.items }}" } }, "metadata": { "position": { "x": 480, "y": 180 } } }
+    ],
+    "edges": [
+      { "id": "e1", "source": "start", "target": "each" },
+      { "id": "e2", "source": "each", "target": "square", "branch": "item" },
+      { "id": "e3", "source": "each", "target": "sum", "branch": "done" }
+    ]
+  }
+}

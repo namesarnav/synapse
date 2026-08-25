@@ -1,4 +1,5 @@
 # Full stack: docker compose up -d --build   (UI on http://localhost:8088)
+name: synapse-stack
 x-go-env: &go-env
   SYNAPSE_ENV: prod
   SYNAPSE_DATABASE_URL: postgres://synapse:synapse@postgres:5432/synapse?sslmode=disable

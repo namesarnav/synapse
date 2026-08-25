@@ -5,6 +5,7 @@ package tracing
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"go.opentelemetry.io/otel"
@@ -24,6 +25,16 @@ var prop = propagation.TraceContext{}
 
 func tracer() trace.Tracer { return otel.Tracer(tracerName) }
 
+// tracesURL appends the OTLP traces path when the endpoint is a bare base URL.
+func tracesURL(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil || (u.Path != "" && u.Path != "/") {
+		return endpoint
+	}
+	u.Path = "/v1/traces"
+	return u.String()
+}
+
 // Init installs a tracer provider exporting over OTLP/HTTP when endpoint is
 // set; otherwise tracing stays a no-op. The returned func flushes and stops it.
 func Init(ctx context.Context, service, endpoint string) (func(context.Context) error, error) {
@@ -32,7 +43,7 @@ func Init(ctx context.Context, service, endpoint string) (func(context.Context) 
 	}
 	opts := []otlptracehttp.Option{}
 	if strings.Contains(endpoint, "://") {
-		opts = append(opts, otlptracehttp.WithEndpointURL(endpoint))
+		opts = append(opts, otlptracehttp.WithEndpointURL(tracesURL(endpoint)))
 	} else {
 		opts = append(opts, otlptracehttp.WithEndpoint(endpoint), otlptracehttp.WithInsecure())
 	}

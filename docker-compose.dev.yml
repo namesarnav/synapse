@@ -1,4 +1,5 @@
 # Dev infrastructure only (Postgres + Redis). `make dev-infra`.
+name: synapse-dev
 # Ports are offset from defaults so they do not clash with local services.
 services:
   postgres:

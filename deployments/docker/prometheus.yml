@@ -1,8 +1,9 @@
-global: { scrape_interval: 5s }
+global:
+  scrape_interval: 10s
 scrape_configs:
-  - job_name: api
+  - job_name: synapse-api
     static_configs: [{ targets: ["api:8080"] }]
-  - job_name: workers
-    dns_sd_configs: [{ names: ["worker"], type: A, port: 8081 }]
-  - job_name: scheduler
+  - job_name: synapse-worker
+    dns_sd_configs: [{ names: ["worker"], type: A, port: 8081, refresh_interval: 10s }]
+  - job_name: synapse-scheduler
     static_configs: [{ targets: ["scheduler:8081"] }]
