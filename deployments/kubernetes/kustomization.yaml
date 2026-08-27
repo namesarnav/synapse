@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: synapse
+resources:
+  - namespace.yaml
+  - config.yaml
+  - postgres.yaml
+  - redis.yaml
+  - api.yaml
+  - scheduler.yaml
+  - worker.yaml
+  - web.yaml
+  - ingress.yaml
+images:
+  - { name: synapse-api, newName: synapse-api, newTag: latest }
+  - { name: synapse-scheduler, newName: synapse-scheduler, newTag: latest }
+  - { name: synapse-worker, newName: synapse-worker, newTag: latest }
+  - { name: synapse-web, newName: synapse-web, newTag: latest }

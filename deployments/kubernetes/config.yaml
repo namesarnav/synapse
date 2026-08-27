@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: synapse-config
+  namespace: synapse
+data:
+  SYNAPSE_ENV: prod
+  SYNAPSE_LOG_LEVEL: info
+  SYNAPSE_REDIS_URL: redis://redis:6379/0
+  SYNAPSE_PUBLIC_URL: https://synapse.example.com
+  SYNAPSE_COOKIE_SECURE: "true"
+  SYNAPSE_WORKER_CAPACITY: "8"
+  SYNAPSE_LEASE_DURATION: 30s
+  SYNAPSE_SHUTDOWN_TIMEOUT: 45s
+  # Set to a collector's base URL (e.g. http://otel-collector:4318) to enable tracing.
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+---
+# Example only: create the real secret out of band (sealed-secrets, external-secrets, ...).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: synapse-secrets
+  namespace: synapse
+type: Opaque
+stringData:
+  # 64 hex chars (32 bytes): openssl rand -hex 32
+  SYNAPSE_MASTER_KEY: "REPLACE_WITH_64_HEX_CHARS"
+  SYNAPSE_DATABASE_URL: postgres://synapse:CHANGE_ME@postgres:5432/synapse?sslmode=disable
+  POSTGRES_PASSWORD: CHANGE_ME

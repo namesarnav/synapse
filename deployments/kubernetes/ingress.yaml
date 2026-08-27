@@ -1,0 +1,19 @@
+# The web pod's nginx already proxies /api, /hooks and /ws to the api service,
+# so a single route to it is enough. WebSockets need long read timeouts.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: synapse
+  namespace: synapse
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+spec:
+  ingressClassName: nginx
+  tls: [{ hosts: [synapse.example.com], secretName: synapse-tls }]
+  rules:
+    - host: synapse.example.com
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: web, port: { name: http } } } }

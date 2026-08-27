@@ -1,0 +1,42 @@
+# Single-node Postgres for evaluation. Use a managed or HA Postgres in production
+# and drop this file (point SYNAPSE_DATABASE_URL at it instead).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: synapse
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata: { labels: { app: postgres } }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports: [{ name: pg, containerPort: 5432 }]
+          env:
+            - { name: POSTGRES_USER, value: synapse }
+            - { name: POSTGRES_DB, value: synapse }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: synapse-secrets, key: POSTGRES_PASSWORD } }
+          readinessProbe: { exec: { command: ["pg_isready", "-U", "synapse"] }, periodSeconds: 5 }
+          livenessProbe: { exec: { command: ["pg_isready", "-U", "synapse"] }, periodSeconds: 15, failureThreshold: 6 }
+          resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { memory: 2Gi } }
+          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 20Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: synapse
+spec:
+  selector: { app: postgres }
+  ports: [{ name: pg, port: 5432, targetPort: pg }]

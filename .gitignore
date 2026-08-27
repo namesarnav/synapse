@@ -8,3 +8,15 @@ apps/web/dist/
 apps/web/coverage/
 .DS_Store
 tests/load/results/*.tmp
+.env.*
+!.env.example
+*.log
+*.tmp
+*.pid
+/bin/
+tmp/
+.idea/
+.vscode/
+apps/web/.vite/
+apps/web/*.tsbuildinfo
+docs/CHECKPOINT.md

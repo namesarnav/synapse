@@ -1,0 +1,28 @@
+# Timers, reaping and the parent-notify sweeper are all row-lock safe, so extra
+# replicas are harmless; two give failover without a leader election.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler
+  namespace: synapse
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: scheduler } }
+  template:
+    metadata:
+      labels: { app: scheduler }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8081", prometheus.io/path: /metrics }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: scheduler
+          image: synapse-scheduler:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{ name: ops, containerPort: 8081 }]
+          envFrom:
+            - configMapRef: { name: synapse-config }
+            - secretRef: { name: synapse-secrets }
+          readinessProbe: { httpGet: { path: /health/ready, port: ops }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health/live, port: ops }, periodSeconds: 10 }
+          resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { memory: 256Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
