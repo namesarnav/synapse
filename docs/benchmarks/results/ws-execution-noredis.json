@@ -1,0 +1,51 @@
+{
+  "events_all": {
+    "count": 1200,
+    "max_ms": 2021.613,
+    "p50_ms": 2002.575,
+    "p95_ms": 2011.704,
+    "p99_ms": 2013.612
+  },
+  "events_by_type": {
+    "execution.succeeded": {
+      "count": 200,
+      "max_ms": 2009.41,
+      "p50_ms": 1999.196,
+      "p95_ms": 2007.42,
+      "p99_ms": 2008.211
+    },
+    "node.queued": {
+      "count": 200,
+      "max_ms": 2021.613,
+      "p50_ms": 2003.814,
+      "p95_ms": 2012.228,
+      "p99_ms": 2014.637
+    },
+    "node.started": {
+      "count": 400,
+      "max_ms": 2019.922,
+      "p50_ms": 1999.692,
+      "p95_ms": 2010.949,
+      "p99_ms": 2013.079
+    },
+    "node.succeeded": {
+      "count": 400,
+      "max_ms": 2021.6,
+      "p50_ms": 2003.399,
+      "p95_ms": 2011.784,
+      "p99_ms": 2013.607
+    }
+  },
+  "execution_level_events_expected_workspace_mode": 600,
+  "executions": 200,
+  "hardware": {
+    "go": "go1.27.1",
+    "logical_cpus": 4,
+    "os": "linux/amd64"
+  },
+  "label": "redis off; 2 workers, api+scheduler in one process, postgres 16.15 (fsync=off), all on one host",
+  "mode": "execution",
+  "rate_per_s": 20,
+  "subscribers": 1,
+  "when": "2026-09-20T09:27:32Z"
+}

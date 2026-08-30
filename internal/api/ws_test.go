@@ -314,3 +314,79 @@ func TestWSTailRecoversWhenLiveDeliveryIsLost(t *testing.T) {
 		t.Fatalf("end = %+v", end)
 	}
 }
+
+func TestWSWorkspaceTailRecoversLostPushesWithoutDuplicates(t *testing.T) {
+	// Without Redis, events committed by other processes never reach this hub;
+	// the workspace tail must deliver them, exactly once.
+	h := newHarness(t)
+	a := h.register("wstail-ws@example.com")
+	wf := h.publishSimple(a)
+	h.Srv.Runtime.OnEvents = func(evs []runtime.Event) { // deliver only some pushes; the rest must come from the tail
+		var some []runtime.Event
+		for _, e := range evs {
+			if e.Type == runtime.EvExecCreated {
+				some = append(some, e)
+			}
+		}
+		h.Srv.Hub.Dispatch(some)
+	}
+	h.startEngine()
+	old := h.runOnce(a, wf) // history that a new stream must not replay
+	for i := 0; ; i++ {
+		ex, err := h.Srv.Runtime.Get(context.Background(), a.WorkspaceID, old)
+		if err == nil && ex.Status == "succeeded" {
+			break
+		}
+		if i > 200 {
+			t.Fatal("old execution never finished")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	h.Srv.wsTail = 50 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Srv.RunWorkspaceTail(ctx)
+	time.Sleep(200 * time.Millisecond) // let the tail record where the log ends
+	c, _, err := h.dialWS("/ws/workspaces/"+a.WorkspaceID, a.Token, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := readMsg(t, c); m.Type != realtime.MsgHello {
+		t.Fatalf("hello = %+v", m)
+	}
+	id := h.runOnce(a, wf)
+	counts := map[string]int{}
+	for counts[runtime.EvExecSucceeded] == 0 {
+		m := readMsg(t, c)
+		if m.Type != realtime.MsgEvent {
+			t.Fatalf("unexpected %+v", m)
+		}
+		if m.Event.ExecutionID == old {
+			t.Fatalf("replayed history: %s", m.Event.Type)
+		}
+		if m.Event.ExecutionID == id {
+			counts[m.Event.Type]++
+		}
+	}
+	time.Sleep(300 * time.Millisecond) // give duplicates a chance to arrive
+	c.SetReadLimit(1 << 20)
+	rctx, rcancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer rcancel()
+	for {
+		var m realtime.Message
+		if err := wsjson.Read(rctx, c, &m); err != nil {
+			break
+		}
+		if m.Type == realtime.MsgEvent && m.Event.ExecutionID == id {
+			counts[m.Event.Type]++
+		}
+	}
+	for typ, n := range counts {
+		if n != 1 {
+			t.Errorf("%s delivered %d times, want 1", typ, n)
+		}
+	}
+	if counts[runtime.EvExecCreated] != 1 || counts[runtime.EvExecSucceeded] != 1 {
+		t.Fatalf("counts = %v", counts)
+	}
+}

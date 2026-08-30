@@ -104,6 +104,7 @@ func run() error {
 		go sch.Run(ctx)
 	}
 	srv := api.New(api.Deps{Cfg: cfg, Log: log, DB: db, Runtime: rt, Hub: hub, Secrets: sec, Metrics: metrics, Checker: expressions.Checker{Cron: cron.Validate}})
+	go srv.RunWorkspaceTail(ctx)
 	hs := &http.Server{Addr: cfg.HTTPAddr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- hs.ListenAndServe() }()

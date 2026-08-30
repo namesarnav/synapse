@@ -230,3 +230,58 @@ func (s *Server) handleWSWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+// tailWindow is how far below its high-water mark the workspace tail re-reads,
+// to catch events whose ids committed out of order.
+const tailWindow = 5000
+
+// RunWorkspaceTail feeds the workspace stream from the event log so it stays
+// complete when Redis is absent or drops a message. Pushes still win on latency;
+// the hub deduplicates by event id. It only queries while a workspace stream is open.
+func (s *Server) RunWorkspaceTail(ctx context.Context) {
+	t := time.NewTicker(s.wsTail)
+	defer t.Stop()
+	var high int64
+	primed := false
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if s.Hub.WorkspaceSubscribers() == 0 {
+			// Remember where the log ends so a new stream does not replay history.
+			if id, err := s.Runtime.MaxEventID(ctx); err == nil {
+				high = id
+			}
+			primed = false
+			continue
+		}
+		from := high - tailWindow
+		if from < 0 {
+			from = 0
+		}
+		evs, err := s.Runtime.ExecutionEventsSince(ctx, from, 2000)
+		if err != nil {
+			if ctx.Err() == nil {
+				s.Log.Warn("workspace tail", "err", err)
+			}
+			continue
+		}
+		fresh := evs[:0:0]
+		for _, e := range evs {
+			if e.ID <= high && !primed {
+				s.Hub.MarkSeen(e.ID)
+				continue
+			}
+			fresh = append(fresh, e)
+		}
+		s.Hub.DispatchWorkspace(fresh)
+		for _, e := range evs {
+			if e.ID > high {
+				high = e.ID
+			}
+		}
+		primed = true
+	}
+}

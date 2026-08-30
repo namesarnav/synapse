@@ -60,6 +60,10 @@ type node = map[string]any
 
 func graph(scenario, echoURL string) map[string]any {
 	trig := node{"id": "t", "type": "manual_trigger", "config": node{}}
+	if scenario == "webhook" {
+		trig = node{"id": "t", "type": "webhook_trigger", "config": node{}}
+		scenario = "chain"
+	}
 	tf := func(id, expr string) node {
 		return node{"id": id, "type": "transform", "config": node{"output": node{"v": expr}}}
 	}
@@ -88,6 +92,15 @@ func graph(scenario, echoURL string) map[string]any {
 	fmt.Fprintln(os.Stderr, "unknown scenario", scenario)
 	os.Exit(2)
 	return nil
+}
+
+// payload is the request body for one submission: the run endpoint wraps the
+// trigger data, a webhook takes it directly.
+func payload(scenario string, i int) map[string]any {
+	if scenario == "webhook" {
+		return map[string]any{"i": i}
+	}
+	return map[string]any{"trigger": map[string]any{"i": i}}
 }
 
 func pct(sorted []float64, p float64) float64 {
@@ -126,7 +139,7 @@ func gitRev() string {
 func main() {
 	api := flag.String("api", "http://127.0.0.1:18080", "API base URL")
 	dbURL := flag.String("db", "postgres://synapse:synapse@localhost:55432/synapse_load?sslmode=disable", "Postgres URL of the stack under test")
-	scenario := flag.String("scenario", "chain", "chain | fanout | http")
+	scenario := flag.String("scenario", "chain", "chain | fanout | http | webhook (chain started through POST /hooks/{id})")
 	total := flag.Int("n", 2000, "executions to submit")
 	conc := flag.Int("c", 32, "concurrent submitters")
 	rate := flag.Float64("rate", 0, "submissions per second across all submitters (0 = as fast as possible)")
@@ -165,6 +178,17 @@ func main() {
 		fatal(err)
 	}
 
+	runPath := "/api/v1/workspaces/" + ws + "/workflows/" + wid + "/run"
+	if *scenario == "webhook" {
+		var hooks struct {
+			Webhooks []struct{ ID string } `json:"webhooks"`
+		}
+		if _, err := c.do("GET", "/api/v1/workspaces/"+ws+"/workflows/"+wid+"/webhooks", nil, &hooks); err != nil || len(hooks.Webhooks) == 0 {
+			fatal(fmt.Errorf("no webhook endpoint: %v", err))
+		}
+		runPath = "/hooks/" + hooks.Webhooks[0].ID
+	}
+
 	pool, err := pgxpool.New(ctx, *dbURL)
 	if err != nil {
 		fatal(err)
@@ -184,7 +208,7 @@ func main() {
 			defer wg.Done()
 			for j := range jobs {
 				s := time.Now()
-				_, err := c.do("POST", "/api/v1/workspaces/"+ws+"/workflows/"+wid+"/run", map[string]any{"trigger": map[string]any{"i": j}}, nil)
+				_, err := c.do("POST", runPath, payload(*scenario, j), nil)
 				d := time.Since(s).Seconds()
 				mu.Lock()
 				if err != nil {

@@ -42,14 +42,22 @@ type Hub struct {
 	mu     sync.RWMutex
 	byExec map[string]map[*Sub]struct{}
 	byWS   map[string]map[*Sub]struct{}
+
+	// seen remembers recent execution-level event ids so the workspace stream can
+	// be fed by both pushes and the database tail without duplicates.
+	seenMu    sync.Mutex
+	seen      map[int64]struct{}
+	seenOrder []int64
 }
+
+const seenCap = 16384
 
 // NewHub returns a hub whose subscribers buffer up to buffer events.
 func NewHub(buffer int) *Hub {
 	if buffer <= 0 {
 		buffer = 256
 	}
-	return &Hub{Buffer: buffer, byExec: map[string]map[*Sub]struct{}{}, byWS: map[string]map[*Sub]struct{}{}}
+	return &Hub{Buffer: buffer, byExec: map[string]map[*Sub]struct{}{}, byWS: map[string]map[*Sub]struct{}{}, seen: map[int64]struct{}{}}
 }
 
 // Execution subscribes to every event of one execution.
@@ -118,18 +126,81 @@ func (h *Hub) Dispatch(evs []runtime.Event) {
 				overflowed = append(overflowed, s)
 			}
 		}
-		if e.WorkspaceID != "" && isExecutionLevel(e.Type) {
-			for s := range h.byWS[e.WorkspaceID] {
-				if !h.offer(s, e) {
-					overflowed = append(overflowed, s)
-				}
-			}
+		if e.WorkspaceID != "" && isExecutionLevel(e.Type) && h.firstSeen(e.ID) {
+			overflowed = h.offerWorkspace(overflowed, e)
 		}
 		h.mu.RUnlock()
 		for _, s := range overflowed {
 			h.drop(s)
 		}
 	}
+}
+
+// DispatchWorkspace delivers execution-level events read from the event log to
+// workspace subscribers, skipping any already delivered by a push.
+func (h *Hub) DispatchWorkspace(evs []runtime.Event) {
+	for i := range evs {
+		e := evs[i]
+		if e.WorkspaceID == "" || !isExecutionLevel(e.Type) || !h.firstSeen(e.ID) {
+			continue
+		}
+		h.mu.RLock()
+		overflowed := h.offerWorkspace(nil, e)
+		h.mu.RUnlock()
+		for _, s := range overflowed {
+			h.drop(s)
+		}
+	}
+}
+
+func (h *Hub) offerWorkspace(overflowed []*Sub, e runtime.Event) []*Sub {
+	for s := range h.byWS[e.WorkspaceID] {
+		if !h.offer(s, e) {
+			overflowed = append(overflowed, s)
+		}
+	}
+	return overflowed
+}
+
+// firstSeen reports whether the event id has not been delivered to the
+// workspace stream yet, and records it. Events without an id are never deduplicated.
+func (h *Hub) firstSeen(id int64) bool {
+	if id <= 0 {
+		return true
+	}
+	h.seenMu.Lock()
+	defer h.seenMu.Unlock()
+	if _, ok := h.seen[id]; ok {
+		return false
+	}
+	h.seen[id] = struct{}{}
+	h.seenOrder = append(h.seenOrder, id)
+	if len(h.seenOrder) > seenCap {
+		drop := len(h.seenOrder) - seenCap/2
+		for _, old := range h.seenOrder[:drop] {
+			delete(h.seen, old)
+		}
+		h.seenOrder = append([]int64(nil), h.seenOrder[drop:]...)
+	}
+	return true
+}
+
+// MarkSeen records event ids as already delivered without sending them.
+func (h *Hub) MarkSeen(ids ...int64) {
+	for _, id := range ids {
+		h.firstSeen(id)
+	}
+}
+
+// WorkspaceSubscribers returns how many workspace streams are open.
+func (h *Hub) WorkspaceSubscribers() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	n := 0
+	for _, set := range h.byWS {
+		n += len(set)
+	}
+	return n
 }
 
 func (h *Hub) offer(s *Sub, e runtime.Event) bool {

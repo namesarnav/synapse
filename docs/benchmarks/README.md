@@ -11,8 +11,8 @@ Every number here comes from a run recorded in `docs/benchmarks/results/`. Nothi
 | OS / arch | linux/amd64 |
 | Go | go1.27.1 |
 | PostgreSQL | 16.15 in Docker (`docker-compose.dev.yml`: `fsync=off`, `synchronous_commit=off`) |
-| Redis | not used in load runs |
-| Code | commit `5516e7e` plus the benchmark files added in this change |
+| Redis | 7 (dev container) for the WebSocket runs, off in the other load runs |
+| Code | the `git` field in each result JSON; the chain/fanout/http runs were recorded at `5516e7e` plus the benchmark files, the webhook and WebSocket runs at `5767a51` plus the files that add them |
 
 Everything runs on this one laptop: the load generator, API (with the scheduler in-process), the workers and PostgreSQL share the same 4 cores. Absolute numbers are therefore a lower bound for a real deployment, and they say more about this host than about the design. Unrelated containers from other projects were also running on the host; their load was not measured.
 
@@ -42,6 +42,7 @@ Scenarios:
 - `chain`: trigger → transform → transform → transform (3 worker tasks per execution).
 - `fanout`: trigger → 5 parallel transforms → merge (5 worker tasks).
 - `http`: trigger → `http_request` against an in-process echo server (1 worker task).
+- `webhook`: the `chain` graph started through the public `POST /hooks/{id}` endpoint (unsigned; the per-endpoint rate limit is lifted for the run) instead of the authenticated run endpoint.
 
 Two arrival modes:
 
@@ -60,8 +61,29 @@ All runs used workers with capacity 16.
 | `chain-w4c16-burst` | 3000 | 9000 | 320 | 147 | 441 | 98 / 135 / 180 | 12344 / 13512 / 13611 | 0 |
 | `fanout-w2c16-burst` | 1500 | 7500 | 291 | 93 | 466 | 105 / 148 / 243 | 7610 / 10669 / 10951 | 0 |
 | `http-w2c16-burst` | 2000 | 2000 | 426 | 306 | 306 | 72 / 103 / 180 | 2235 / 2754 / 2788 | 0 |
+| `webhook-w2c16-burst` | 3000 | 9000 | 431 | 149 | 448 | 71 / 104 / 138 | 13865 / 14636 / 14694 | 0 |
+| `webhook-w2c16-rate100` | 3000 | 9000 | 100 | 100 | 300 | 4 / 7 / 11 | 17 / 28 / 45 | 0 |
 
 `submit/s` is the API acceptance rate, `executions/s` and `tasks/s` are completions over the whole submit-plus-drain window. All runs finished every execution with no failures and no redelivered tasks.
+
+## WebSocket event latency
+
+`tests/load/wslat` starts 20 chain executions per second and measures, for each event a client receives, `receive time - execution_events.created_at`. Both clocks are on the same host. `created_at` is the start of the writing transaction, so the figures slightly overstate the delay. `tests/load/ws.sh` runs it against a stack with Redis and one without; 2 workers, `fsync=off` PostgreSQL, everything on one host.
+
+| run | subscribers | events received | p50 / p95 / p99 / max (ms) |
+| --- | ---: | ---: | --- |
+| `ws-execution-noredis` | 1 per execution | 1200 | 2002.6 / 2011.7 / 2013.6 / 2021.6 |
+| `ws-execution-redis` | 1 per execution | 1200 | 2.9 / 4.3 / 5.8 / 11.7 |
+| `ws-workspace-noredis-s1` | 1 | 900 | 3.8 / 1696.5 / 1947.4 / 1997.4 |
+| `ws-workspace-redis-s1` | 1 | 900 | 3.7 / 5.1 / 11.9 / 17.8 |
+| `ws-workspace-redis-s100` | 100 | 90000 | 5.1 / 7.1 / 17.4 / 21.9 |
+
+How to read it:
+
+- **With Redis, live pushes arrive in a few milliseconds**, including 100 concurrent workspace subscribers each receiving all 900 events (90000 deliveries, none missing).
+- **Without Redis the execution stream still delivers every event, but only through the database tail, which polls every 2 s.** The 2003 ms median is that poll interval, not a defect in the push path.
+- **Without Redis the workspace stream is complete but late for worker-driven events.** All 900 events arrived. `execution.created` and `execution.started` are committed by the API process and pushed within milliseconds; `execution.succeeded` is committed by a worker process, so it reaches the API only through the database tail (`RunWorkspaceTail`, one query per poll interval regardless of subscriber count), giving a median of about 1 s and a worst case just under the 2 s interval. An earlier run of this benchmark, before that tail existed, received only 600 of 900 events (every `execution.succeeded` was missing); the tail was added because of that result. The workspace stream has no replay by design, so UIs refetch the list after reconnecting.
+- `ws-execution-*` counts only events created after the socket connected (earlier ones are replayed from the log and would measure connect time, not push latency), so its event counts are not a completeness check; the workspace rows are.
 
 ## Reading the results
 
@@ -75,7 +97,7 @@ All runs used workers with capacity 16.
 
 - Single host, shared CPU, one run per configuration. There is no variance estimate; differences of a few percent (for example submit rate between the 1 and 4 worker runs) are within what I would expect from noise on a laptop.
 - The load generator competes with the system under test for CPU.
-- Redis and WebSocket fan-out were not part of the load runs. Fan-out cost is covered only by `BenchmarkDispatch`.
+- The throughput runs had Redis off. WebSocket latency was measured separately at a fixed 20 executions/s, not under saturation, so it says nothing about push latency when the system is overloaded.
 - The metrics gauges that count rows by status run a `GROUP BY` per scrape; they were not enabled in load runs and their cost on a large `executions` table was not measured.
 
 ## Reproducing
@@ -83,7 +105,7 @@ All runs used workers with capacity 16.
 ```sh
 make dev-infra        # PostgreSQL on :55432, Redis on :56379
 make benchmark        # micro-benchmarks, raw output on stdout
-make load-test        # runs tests/load/suite.sh, writes docs/benchmarks/results/*.json
+make load-test        # runs tests/load/suite.sh (includes tests/load/ws.sh), writes docs/benchmarks/results/*.json
 python3 tests/load/table.py   # regenerate the table above from the JSON files
 ```
 

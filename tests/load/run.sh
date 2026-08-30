@@ -22,6 +22,7 @@ pids=()
 cleanup() { kill "${pids[@]}" 2>/dev/null || true; wait 2>/dev/null || true; rm -rf "$BIN"; }
 trap cleanup EXIT
 
+export SYNAPSE_WEBHOOK_RATE=1000000 SYNAPSE_WEBHOOK_BURST=1000000
 export SYNAPSE_DATABASE_URL=$DBURL SYNAPSE_HTTP_ALLOW_PRIVATE=true SYNAPSE_LOG_LEVEL=error SYNAPSE_REDIS_URL=""
 export SYNAPSE_MASTER_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 SYNAPSE_HTTP_ADDR=:18080 "$BIN/api" & pids+=($!)

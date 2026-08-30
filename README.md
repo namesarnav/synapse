@@ -110,6 +110,6 @@ Docker Compose: [docker-compose.yml](docker-compose.yml) (it falls back to a wel
 
 - At-least-once delivery: a node whose worker dies after its side effect but before recording the
   result runs again. Give side-effecting HTTP calls an idempotency key.
-- The workspace WebSocket has no replay; clients re-fetch the list after a reconnect.
+- The workspace WebSocket has no replay (clients re-fetch the list after a reconnect), and without Redis worker-driven events reach it through a 2 s database poll.
 - Throughput on one Postgres is bounded by its commit rate; see the benchmarks for the measured plateau.
 - The Kubernetes manifests are checked for well-formedness but have not been applied to a live cluster.

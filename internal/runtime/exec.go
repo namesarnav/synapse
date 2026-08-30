@@ -290,6 +290,44 @@ func (rt *Runtime) Events(ctx context.Context, execID string, after int64, limit
 	return out, rows.Err()
 }
 
+// ExecutionEventsSince returns execution-level events whose id is above after,
+// oldest first, with workspace and workflow filled in. Ids can commit slightly
+// out of order, so callers re-read a window below their high-water mark and
+// deduplicate by id.
+func (rt *Runtime) ExecutionEventsSince(ctx context.Context, after int64, limit int) ([]Event, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 2000
+	}
+	rows, err := rt.DB.Pool.Query(ctx, `SELECT ev.id, ev.execution_id::text, e.workflow_id::text, e.workspace_id::text, ev.type, ev.node_id, ev.attempt, ev.data, ev.created_at
+		FROM execution_events ev JOIN executions e ON e.id = ev.execution_id
+		WHERE ev.id > $1 AND ev.type = ANY($2) ORDER BY ev.id LIMIT $3`,
+		after, []string{EvExecCreated, EvExecStarted, EvExecSucceeded, EvExecFailed, EvExecCancelled, EvExecCancelReq}, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Event{}
+	for rows.Next() {
+		var e Event
+		var d []byte
+		if err := rows.Scan(&e.ID, &e.ExecutionID, &e.WorkflowID, &e.WorkspaceID, &e.Type, &e.NodeID, &e.Attempt, &d, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		if len(d) > 0 {
+			_ = json.Unmarshal(d, &e.Data)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// MaxEventID returns the highest execution event id, or 0 when there are none.
+func (rt *Runtime) MaxEventID(ctx context.Context) (int64, error) {
+	var id int64
+	err := rt.DB.Pool.QueryRow(ctx, `SELECT coalesce(max(id), 0) FROM execution_events`).Scan(&id)
+	return id, err
+}
+
 // ListParams filters executions.
 type ListParams struct {
 	WorkspaceID string
