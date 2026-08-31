@@ -221,3 +221,9 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
   .editor-body { flex-direction: column; }
   .panel, .config { width: auto; max-height: 240px; }
 }
+.react-flow__minimap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.react-flow__minimap-mask { fill: rgba(14, 17, 22, 0.7); }
+.react-flow__minimap-node { fill: var(--surface-2); stroke: var(--muted); }
+.react-flow__controls-button { background: var(--surface-2); border-bottom-color: var(--border); color: var(--text); fill: var(--text); }
+.react-flow__controls-button:hover { background: var(--border); }
+.react-flow__controls-button svg { fill: currentColor; }
