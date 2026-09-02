@@ -124,7 +124,7 @@ func TestHTTPBlocksPrivateAddresses(t *testing.T) {
 func TestHTTPRedirectsNotFollowedByDefault(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("final")) }))
 	defer target.Close()
-	redir := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, 302) }))
+	redir := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, http.StatusFound) }))
 	defer redir.Close()
 	ex := NewHTTPExecutor(HTTPOptions{AllowPrivate: true})
 	_, err := ex.Execute(context.Background(), input(t, workflow.TypeHTTPRequest, map[string]any{"url": redir.URL}, nil))

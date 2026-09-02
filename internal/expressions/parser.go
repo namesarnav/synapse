@@ -55,7 +55,6 @@ func describe(t token) string {
 }
 
 func (p *parser) isPunct(s string) bool { t := p.peek(); return t.kind == tPunct && t.text == s }
-func (p *parser) isWord(s string) bool  { t := p.peek(); return t.kind == tIdent && t.text == s }
 
 func (p *parser) expectPunct(s string) (token, error) {
 	t := p.next()

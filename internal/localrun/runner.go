@@ -101,7 +101,6 @@ type event struct {
 	out     any
 	err     error
 	attempt int
-	failed  int
 }
 
 func (r *Runner) run(ctx context.Context, g *workflow.Graph, in runInput) (*Result, error) {

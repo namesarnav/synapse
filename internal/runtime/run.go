@@ -186,8 +186,6 @@ func (rt *Runtime) Advance(ctx context.Context, id string) error {
 
 // state helpers -------------------------------------------------------------
 
-func (r *run) node(id string) *NodeExec { return r.rows[id] }
-
 func (r *run) emit(typ, node string, attempt int, data map[string]any) {
 	r.events = append(r.events, Event{
 		ExecutionID: r.ex.ID, WorkflowID: r.ex.WorkflowID, WorkspaceID: r.ex.WorkspaceID,

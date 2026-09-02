@@ -374,12 +374,6 @@ func (w *Worker) heartbeats(runCtx, loopCtx context.Context) {
 	}
 }
 
-func (w *Worker) inflightCount() int {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return len(w.inflight)
-}
-
 func (w *Worker) beat(ctx context.Context) {
 	w.mu.Lock()
 	refs := make([]runtime.TaskRef, 0, len(w.inflight))
