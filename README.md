@@ -106,6 +106,8 @@ All settings are environment variables (see `internal/config/config.go`). The im
 Docker Compose: [docker-compose.yml](docker-compose.yml) (it falls back to a well-known demo master key; set `SYNAPSE_MASTER_KEY` for anything real). Kubernetes: [deployments/kubernetes](deployments/kubernetes)
 (kustomize; API, scheduler, workers with an HPA, web, Postgres for evaluation, Ingress).
 
+The full write-up (guarantees, failure semantics, measured results, limitations) is in [docs/ENGINEERING_REPORT.md](docs/ENGINEERING_REPORT.md).
+
 ## Known limitations
 
 - At-least-once delivery: a node whose worker dies after its side effect but before recording the
