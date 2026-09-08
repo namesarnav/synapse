@@ -1,12 +1,14 @@
 import { useState, type FormEvent } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../state/auth";
 import { ErrorBanner, errMsg } from "../components/ui";
+import { Logo } from "../components/Logo";
 
 export function Login() {
   const { session, login, register } = useAuth();
   const nav = useNavigate();
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [params] = useSearchParams();
+  const [mode, setMode] = useState<"login" | "register">(params.get("mode") === "register" ? "register" : "login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -35,10 +37,10 @@ export function Login() {
     <div className="auth-wrap">
       <form className="auth-card" onSubmit={submit}>
         <h1>
-          <span className="logo" aria-hidden="true">
-            ◈
-          </span>{" "}
-          Synapse
+          <Link to="/welcome">
+            <Logo />
+            Synapse
+          </Link>
         </h1>
         <p className="muted">{mode === "login" ? "Sign in to your workspace" : "Create an account and workspace"}</p>
         <ErrorBanner error={error} />

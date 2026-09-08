@@ -82,7 +82,7 @@ function Inner({ nodes, edges, view, readOnly, onNodesChange, onEdgesChange, onC
         fitView
         fitViewOptions={{ padding: 0.3, maxZoom: 1 }}
         proOptions={{ hideAttribution: true }}
-        colorMode="dark"
+        colorMode="light"
       >
         <Background gap={20} />
         <Controls showInteractive={false} />

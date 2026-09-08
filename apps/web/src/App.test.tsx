@@ -39,6 +39,30 @@ describe("app shell", () => {
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
   });
 
+  it("shows the landing page to signed-out visitors at the root", async () => {
+    mount("/");
+    expect(await screen.findByRole("heading", { level: 1, name: /Workflows that survive/ })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Get started" })[0]).toHaveAttribute("href", "/login?mode=register");
+    expect(screen.queryByRole("heading", { name: "Dashboard" })).not.toBeInTheDocument();
+  });
+
+  it("opens the register form from the landing page link", async () => {
+    mount("/login?mode=register");
+    expect(await screen.findByRole("button", { name: "Create account" })).toBeInTheDocument();
+  });
+
+  it("shows signed-in users a dashboard link on the landing page", async () => {
+    localStorage.setItem("synapse.token", "tok");
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/auth/me")) return json(200, session);
+      return json(200, { items: [], next_cursor: "" });
+    });
+    mount("/welcome");
+    const links = await screen.findAllByRole("link", { name: "Open dashboard" });
+    for (const l of links) expect(l).toHaveAttribute("href", "/");
+    expect(screen.queryByRole("link", { name: "Sign in" })).not.toBeInTheDocument();
+  });
+
   it("shows API errors on failed login", async () => {
     fetchMock.mockImplementation(async () => json(401, { error: { code: "unauthorized", message: "invalid email or password" } }));
     mount("/login");
@@ -78,7 +102,7 @@ describe("app shell", () => {
   it("drops a rejected token and returns to login", async () => {
     localStorage.setItem("synapse.token", "stale");
     fetchMock.mockImplementation(async () => json(401, { error: { code: "unauthorized", message: "expired" } }));
-    mount("/");
+    mount("/workflows");
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
     expect(localStorage.getItem("synapse.token")).toBeNull();
   });
