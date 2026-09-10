@@ -11,5 +11,5 @@ COPY deployments/docker/nginx.conf.template /etc/nginx/templates/default.conf.te
 COPY deployments/docker/synapse-proxy.conf /etc/nginx/synapse-proxy.conf
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
 # The nginx image renders /etc/nginx/templates with these at start; override for other platforms.
-ENV PORT=8080 API_UPSTREAM=http://api:8080
+ENV PORT=8080 API_UPSTREAM=http://api:8080 NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 EXPOSE 8080

@@ -48,12 +48,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(drop);
     if (tokenStore.get() === null) return () => setUnauthorizedHandler(null);
+    // An unreachable API must not leave the app on "Loading…" forever.
+    const slow = setTimeout(() => setLoading(false), 8000);
     api
       .me()
       .then((s) => setSession(s))
       .catch(drop)
-      .finally(() => setLoading(false));
-    return () => setUnauthorizedHandler(null);
+      .finally(() => {
+        clearTimeout(slow);
+        setLoading(false);
+      });
+    return () => {
+      clearTimeout(slow);
+      setUnauthorizedHandler(null);
+    };
   }, [drop]);
 
   const value = useMemo<AuthValue>(() => {
