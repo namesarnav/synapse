@@ -1,7 +1,8 @@
-import { useRef, type MouseEvent, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, type ReactNode } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../state/auth";
 import { Logo } from "../components/Logo";
+import { SiteNav, scrollToId } from "../components/SiteNav";
 import { useParallax } from "../hooks/useParallax";
 import "./landing.css";
 
@@ -78,15 +79,6 @@ const stats = [
 
 const built = ["Go", "PostgreSQL", "Redis", "React", "OpenTelemetry", "Prometheus", "Docker"];
 
-function jump(id: string) {
-  return (e: MouseEvent) => {
-    const t = document.getElementById(id);
-    if (!t) return;
-    e.preventDefault();
-    t.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  };
-}
-
 function HeroGraph() {
   const node = (x: number, y: number, title: string, sub: string, state: "ok" | "run" | "idle", accent = false) => (
     <g transform={`translate(${x} ${y})`} className={`g-node ${state}`}>
@@ -131,35 +123,17 @@ export function Landing() {
   const ref = useRef<HTMLDivElement>(null);
   const { session } = useAuth();
   useParallax(ref);
-  const start = session ? "/" : "/login?mode=register";
+  const start = session ? "/dashboard" : "/login?mode=register";
+  const { hash } = useLocation();
+  // arriving from another page with a section hash (e.g. /#features)
+  useEffect(() => {
+    if (hash) setTimeout(() => scrollToId(hash.slice(1)), 60);
+  }, [hash]);
 
   return (
     <div className="lp" ref={ref}>
       <div className="lp-progress" aria-hidden="true" />
-      <header className="lp-nav">
-        <div className="lp-wrap lp-nav-in">
-          <Link to="/welcome" className="lp-brand">
-            <Logo />
-            Synapse
-          </Link>
-          <nav className="lp-links" aria-label="Sections">
-            <a href="#features" onClick={jump("features")}>Features</a>
-            <a href="#how" onClick={jump("how")}>How it works</a>
-            <a href="#reliability" onClick={jump("reliability")}>Reliability</a>
-            <a href="#numbers" onClick={jump("numbers")}>Numbers</a>
-          </nav>
-          <div className="lp-nav-cta">
-            {session ? (
-              <Link to="/" className="lp-btn solid sm">Open dashboard</Link>
-            ) : (
-              <>
-                <Link to="/login" className="lp-btn text sm">Sign in</Link>
-                <Link to={start} className="lp-btn solid sm">Get started</Link>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
+      <SiteNav />
 
       <section className="lp-hero">
         <div className="lp-blobs" aria-hidden="true">
@@ -180,7 +154,7 @@ export function Landing() {
             </p>
             <div className="lp-cta enter" style={{ ["--d" as string]: "240ms" }}>
               <Link to={start} className="lp-btn solid lg">{session ? "Open dashboard" : "Get started"}</Link>
-              <a href="#how" onClick={jump("how")} className="lp-btn outline lg">See how it works</a>
+              <a href="#how" onClick={(e) => { e.preventDefault(); scrollToId("how"); }} className="lp-btn outline lg">See how it works</a>
             </div>
           </div>
 
@@ -314,14 +288,14 @@ export function Landing() {
 
       <footer className="lp-foot">
         <div className="lp-wrap lp-foot-in">
-          <Link to="/welcome" className="lp-brand">
+          <Link to="/" className="lp-brand">
             <Logo />
             Synapse
           </Link>
           <p>A durable workflow engine built with Go, PostgreSQL and React.</p>
           <div className="lp-foot-links">
             {session ? (
-              <Link to="/">Dashboard</Link>
+              <Link to="/dashboard">Dashboard</Link>
             ) : (
               <>
                 <Link to="/login">Sign in</Link>

@@ -57,10 +57,35 @@ describe("app shell", () => {
       if (url.endsWith("/auth/me")) return json(200, session);
       return json(200, { items: [], next_cursor: "" });
     });
-    mount("/welcome");
+    mount("/");
     const links = await screen.findAllByRole("link", { name: "Open dashboard" });
-    for (const l of links) expect(l).toHaveAttribute("href", "/");
+    for (const l of links) expect(l).toHaveAttribute("href", "/dashboard");
     expect(screen.queryByRole("link", { name: "Sign in" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the site nav on the login page", async () => {
+    mount("/login");
+    expect(await screen.findByRole("navigation", { name: "Sections" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Get started" })).toHaveAttribute("href", "/login?mode=register");
+  });
+
+  it("sends the old /welcome path to the landing page", async () => {
+    mount("/welcome");
+    expect(await screen.findByRole("heading", { level: 1, name: /Workflows that survive/ })).toBeInTheDocument();
+  });
+
+  it("returns to the landing page on sign out", async () => {
+    localStorage.setItem("synapse.token", "tok");
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/auth/me")) return json(200, session);
+      if (url.endsWith("/auth/logout")) return new Response(null, { status: 204 });
+      return json(200, { items: [], next_cursor: "" });
+    });
+    mount("/dashboard");
+    await userEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    expect(await screen.findByRole("heading", { level: 1, name: /Workflows that survive/ })).toBeInTheDocument();
+    await waitFor(() => expect(localStorage.getItem("synapse.token")).toBeNull());
+    expect(screen.getAllByRole("link", { name: "Get started" }).length).toBeGreaterThan(0);
   });
 
   it("shows API errors on failed login", async () => {

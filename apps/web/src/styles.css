@@ -133,7 +133,9 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .empty-title { color: var(--text); margin: 0 0 6px; }
 .json { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; margin: 0; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 
-.auth-wrap { min-height: 100%; display: grid; place-items: center; padding: 24px; background: radial-gradient(ellipse 70% 55% at 50% 0%, var(--accent-tint), transparent), var(--bg); }
+.public-page { min-height: 100%; display: flex; flex-direction: column; }
+.public-page .auth-wrap { flex: 1; min-height: 0; }
+.auth-wrap { min-height: 100%; display: grid; place-items: center; padding: 24px; background: radial-gradient(ellipse 90% 90% at 50% 0%, var(--accent-tint), transparent 90%), var(--bg); }
 .auth-card { width: 100%; max-width: 380px; background: var(--bg); border: 1px solid var(--border); border-radius: 16px; padding: 30px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--shadow); }
 .auth-card h1 { display: flex; align-items: center; gap: 10px; font-size: 24px; }
 .auth-card h1 a { display: flex; align-items: center; gap: 10px; color: var(--text); }

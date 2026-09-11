@@ -31,12 +31,6 @@ export function useParallax(root: RefObject<HTMLElement>) {
       cleanups.push(() => io.disconnect());
     }
 
-    const nav = el.querySelector<HTMLElement>(".lp-nav");
-    const onScrolled = () => nav?.classList.toggle("scrolled", window.scrollY > 8);
-    onScrolled();
-    window.addEventListener("scroll", onScrolled, { passive: true });
-    cleanups.push(() => window.removeEventListener("scroll", onScrolled));
-
     if (reduce) return () => cleanups.forEach((c) => c());
 
     document.documentElement.classList.add("lp-smooth");

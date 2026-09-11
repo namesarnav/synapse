@@ -8,7 +8,7 @@ export function Shell() {
   return (
     <div className="shell">
       <nav className="sidebar" aria-label="Main">
-        <Link to="/welcome" className="brand">
+        <Link to="/" className="brand">
           <Logo />
           Synapse
         </Link>
@@ -22,7 +22,7 @@ export function Shell() {
           </select>
         )}
         {session && session.workspaces.length === 1 && <div className="ws-name">{workspace?.name}</div>}
-        <NavLink to="/" end>
+        <NavLink to="/dashboard">
           Dashboard
         </NavLink>
         <NavLink to="/workflows">Workflows</NavLink>
@@ -34,8 +34,9 @@ export function Shell() {
           <button
             className="ghost"
             onClick={async () => {
+              // leave first so the route guard does not bounce to /login
+              nav("/");
               await logout();
-              nav("/login");
             }}
           >
             Sign out
